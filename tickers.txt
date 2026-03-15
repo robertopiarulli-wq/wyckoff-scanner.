@@ -24,4 +24,3 @@ XRP-USD
 ZC=F
 ZS=F
 ZW=F
-YM=F
