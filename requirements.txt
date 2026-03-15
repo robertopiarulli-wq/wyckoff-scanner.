@@ -4,3 +4,4 @@ requests
 matplotlib
 mplfinance
 numpy
+pip install supabase
