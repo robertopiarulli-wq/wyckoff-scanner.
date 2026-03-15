@@ -1,5 +1,4 @@
-import MetaTrader5 as mt5
-import pandas as pd
+import yfinance as yf
 import requests
 import os
 
@@ -11,19 +10,20 @@ def send_msg(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage?chat_id={CHAT_ID}&text={msg}"
     requests.get(url)
 
-if mt5.initialize():
-    symbols = ["EURUSD", "XAUUSD", "HG1!"] # Puoi aggiungere i tuoi ticker
-    for s in symbols:
-        rates = mt5.copy_rates_from_pos(s, mt5.TIMEFRAME_H4, 0, 200)
-        df = pd.DataFrame(rates)
-        
-        high_r = df['high'].rolling(137).max().iloc[-1]
-        low_r = df['low'].rolling(137).min().iloc[-1]
-        range_h = high_r - low_r
-        
-        p_livello = low_r - (range_h * 0.007 * 3.0) 
-        
-        if abs(df['close'].iloc[-1] - p_livello) / p_livello < 0.005:
-            send_msg(f"SEGNALE WYCKOFF: {s} è vicino al P_Livello: {p_livello:.4f}")
+# Simboli (Ticker Yahoo Finance: HG=F per Rame, BTC-USD per Bitcoin)
+symbols = {"HG=F": "Rame", "BTC-USD": "Bitcoin", "GC=F": "Oro"}
+
+for ticker, name in symbols.items():
+    data = yf.download(ticker, period="6mo", interval="1h")
     
-    mt5.shutdown()
+    # Calcolo Wyckoff
+    high_r = data['High'].rolling(137).max().iloc[-1]
+    low_r = data['Low'].rolling(137).min().iloc[-1]
+    range_h = high_r - low_r
+    
+    # Calcolo p_livello (Costante 3.0)
+    p_livello = low_r - (range_h * 0.007 * 3.0) 
+    
+    # Verifica soglia (se il prezzo è entro lo 0.5% dal P_Livello)
+    if abs(data['Close'].iloc[-1] - p_livello) / p_livello < 0.005:
+        send_msg(f"SEGNALE WYCKOFF: {name} ({ticker}) è vicino al P_Livello: {p_livello:.2f}")
