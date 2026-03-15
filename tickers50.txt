@@ -1,4 +1,3 @@
-# Materie Prime (I più reattivi per Wyckoff)
 HG=F
 GC=F
 SI=F
@@ -9,32 +8,16 @@ ZS=F
 ZW=F
 KC=F
 CT=F
-
-# Indici (Cacciatori di liquidità)
 ES=F
 NQ=F
 YM=F
 RTY=F
-^GSPC
-^IXIC
-^DJI
-^FTSE
-^GDAXI
-^FCHI
-
-# Criptovalute (Alta volatilità)
 BTC-USD
 ETH-USD
 SOL-USD
 ADA-USD
 XRP-USD
 DOT-USD
-LINK-USD
-AVAX-USD
-MATIC-USD
-UNI-USD
-
-# Forex (Le "Major" - rispettano meglio la ciclicità)
 EURUSD=X
 GBPUSD=X
 USDJPY=X
@@ -42,11 +25,6 @@ AUDUSD=X
 USDCHF=X
 USDCAD=X
 NZDUSD=X
-EURGBP=X
-EURJPY=X
-GBPJPY=X
-
-# Azioni "Blue Chip" (Movimenti strutturati)
 AAPL
 MSFT
 AMZN
