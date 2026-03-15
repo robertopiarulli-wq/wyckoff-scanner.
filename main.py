@@ -2,6 +2,7 @@ import yfinance as yf
 import requests
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['CHAT_ID']
@@ -19,31 +20,41 @@ with open('tickers.txt', 'r') as f:
 
 for ticker in symbols:
     try:
-        # download per singolo ticker evita i conflitti di MultiIndex
-        df = yf.download(ticker, period="3mo", interval="1h", progress=False)
+        # Download con auto_adjust=True per pulire i dati
+        df = yf.download(ticker, period="3mo", interval="1h", progress=False, auto_adjust=True)
         
         if df.empty or len(df) < 137:
             continue
             
-        # Assicuriamoci di lavorare con serie singole
-        high_s = df['High']
-        low_s = df['Low']
-        close_s = df['Close']
+        # Forza la trasformazione in array numpy piatti per evitare l'ambiguità
+        high_s = df['High'].values
+        low_s = df['Low'].values
+        close_s = df['Close'].values
         
-        high_r = high_s.rolling(137).max().iloc[-1]
-        low_r = low_s.rolling(137).min().iloc[-1]
+        # Calcolo rolling manuale su array numpy per evitare conflitti con Pandas Series
+        def rolling_min(arr, window):
+            return np.min([arr[i-window+1:i+1] for i in range(window-1, len(arr))], axis=0)
+        
+        def rolling_max(arr, window):
+            return np.max([arr[i-window+1:i+1] for i in range(window-1, len(arr))], axis=0)
+
+        high_r = np.max(high_s[-137:])
+        low_r = np.min(low_s[-137:])
+        
         range_h = high_r - low_r
         p_livello = low_r - (range_h * 0.007 * 3.0) 
         
-        prezzo_attuale = close_s.iloc[-1]
+        prezzo_attuale = close_s[-1]
         distanza = abs(prezzo_attuale - p_livello) / p_livello
         
+        # Logica Semaforo
         if distanza < 0.002: semaforo = "🔴"
         elif distanza < 0.01: semaforo = "🟡"
         else: continue 
 
+        # Grafico
         plt.figure(figsize=(10, 5))
-        plt.plot(close_s[-100:].values, label='Prezzo')
+        plt.plot(close_s[-100:], label='Prezzo')
         plt.axhline(y=p_livello, color='blue', linestyle='--', label='P_Livello')
         plt.title(f"Setup Wyckoff: {ticker}")
         plt.legend()
@@ -51,6 +62,7 @@ for ticker in symbols:
         plt.close()
         
         send_telegram(ticker, ticker, semaforo, p_livello, "plot.png")
+        
     except Exception as e:
         print(f"Errore su {ticker}: {e}")
         continue
