@@ -2,13 +2,10 @@ import yfinance as yf
 import requests
 import os
 import mplfinance as mpf
-import numpy as np
+import time
 
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['CHAT_ID']
-
-# Mappa Ticker -> Nome MT5
-MT5_MAP = {"HG=F": "HG1!", "GC=F": "XAUUSD", "BTC-USD": "BTCUSD", "EURUSD=X": "EURUSD"}
 
 def send_telegram(msg, img_path):
     url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
@@ -27,29 +24,18 @@ for ticker in symbols:
         low_r = df['Low'].rolling(137).min().iloc[-1]
         range_h = high_r - low_r
         
-        # Calcolo P_Livello (Spring se prezzo > low_r, Upthrust se prezzo < high_r)
         p_livello = low_r - (range_h * 0.007 * 3.0) 
-        tp, sl = p_livello + (range_h * 0.03), p_livello - (range_h * 0.01)
-        
         prezzo = df['Close'].iloc[-1]
         distanza = abs(prezzo - p_livello) / p_livello
         
-        # Semaforo
+        # LOGICA SCANNER: Filtriamo per non intasare Telegram
         if distanza < 0.002: semaforo, stato = "🔴", "INGRESSO IMMEDIATO"
         elif distanza < 0.01: semaforo, stato = "🟡", "IN AVVICINAMENTO"
-        else: semaforo, stato = "⚪", "LONTANO"
+        else: continue # <--- QUI LO SCANNER "SILENZIA" I TICKER LONTANI
         
-        # Fase Wyckoff semplificata
-        fase = "ACCUMULAZIONE" if prezzo > low_r else "DISTRIBUZIONE"
-        
-        msg = (f"{semaforo} {MT5_MAP.get(ticker, ticker)}\n"
-               f"Stato: {stato}\nFase: {fase}\n"
-               f"BUY LIMIT: {p_livello:.2f}\n"
-               f"TP: {tp:.2f} | SL: {sl:.2f}")
-
-        # Grafico
-        mpf.plot(df.iloc[-50:], type='candle', style='charles', savefig='plot.png',
-                 hlines=dict(hlines=[p_livello, tp, sl], colors=['blue', 'green', 'red'], linestyle='-.'))
-        
+        # Se arriviamo qui, il ticker è interessante (Rosso o Giallo)
+        msg = f"{semaforo} {ticker}\nStato: {stato}\nTarget: {p_livello:.2f}"
+        mpf.plot(df.iloc[-50:], type='candle', style='charles', savefig='plot.png')
         send_telegram(msg, 'plot.png')
+        time.sleep(2) # Pausa di sicurezza per Telegram
     except Exception: continue
