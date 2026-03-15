@@ -1,52 +1,40 @@
-import yfinance as yf
-import requests
-import os
-import mplfinance as mpf
-import time
-import pandas as pd
-
-print("Avvio script...") # Debug 1
-
-TOKEN = os.environ.get('TELEGRAM_TOKEN')
-CHAT_ID = os.environ.get('CHAT_ID')
-
-def send_telegram(msg, img_path):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-    with open(img_path, 'rb') as photo:
-        files = {'photo': photo}
-        data = {'chat_id': CHAT_ID, 'caption': msg}
-        requests.post(url, files=files, data=data)
-    print("Messaggio inviato.") # Debug 2
-
-with open('tickers.txt', 'r') as f:
-    symbols = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-print(f"Ticker trovati: {len(symbols)}") # Debug 3
-
 for ticker in symbols:
-    print(f"Analizzo: {ticker}") # Debug 4
+    print(f"Analizzo: {ticker}")
     try:
+        # scarica i dati
         df = yf.download(ticker, period="3mo", interval="1h", progress=False, auto_adjust=True)
-        # Forza la selezione del prezzo se è multi-indice
-        close_price = df['Close'].iloc[-1]
-        if isinstance(close_price, pd.Series): close_price = close_price.iloc[-1]
+        if df.empty or len(df) < 137: continue
+            
+        # ESTRAZIONE "PIATTA" (senza MultiIndex)
+        # Usiamo .iloc[:, 0] per forzare la prima colonna se ci sono conflitti
+        high_s = df['High'].values if isinstance(df['High'], pd.Series) else df.iloc[:, df.columns.get_loc('High')].values
+        low_s = df['Low'].values if isinstance(df['Low'], pd.Series) else df.iloc[:, df.columns.get_loc('Low')].values
+        close_s = df['Close'].values if isinstance(df['Close'], pd.Series) else df.iloc[:, df.columns.get_loc('Close')].values
         
-        high_r = df['High'].max() if isinstance(df['High'], (float, int)) else df['High'].rolling(137).max().iloc[-1]
-        low_r = df['Low'].min() if isinstance(df['Low'], (float, int)) else df['Low'].rolling(137).min().iloc[-1]
-        
+        # Calcolo rolling puro con numpy
+        high_r = np.max(high_s[-137:])
+        low_r = np.min(low_s[-137:])
         range_h = high_r - low_r
+        
         p_livello = low_r - (range_h * 0.007 * 3.0) 
+        prezzo = close_s[-1]
         
-        distanza = abs(close_price - p_livello) / p_livello
+        distanza = abs(prezzo - p_livello) / p_livello
         
-        # LOGICA TEST: Inviamo tutto
+        # Logica di notifica
         semaforo = "🔴" if distanza < 0.002 else ("🟡" if distanza < 0.01 else "⚪")
         stato = "INGRESSO" if distanza < 0.002 else ("AVVICINAMENTO" if distanza < 0.01 else "LONTANO")
         
         msg = f"{semaforo} {ticker}\nStato: {stato}\nTarget: {p_livello:.2f}"
+        
+        # Salvataggio grafico
         mpf.plot(df.iloc[-50:], type='candle', style='charles', savefig='plot.png')
+        
+        # Invio
         send_telegram(msg, 'plot.png')
+        print(f"Finito {ticker}")
         time.sleep(2)
-        print(f"Finito {ticker}") # Debug 5
+        
     except Exception as e:
-        print(f"Errore su {ticker}: {e}") # Debug 6
+        print(f"Errore su {ticker}: {e}")
         continue
