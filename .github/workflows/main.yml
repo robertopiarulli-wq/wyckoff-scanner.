@@ -1,9 +1,7 @@
 name: Wyckoff Scanner
 on:
   schedule:
-    - cron: '0 9 * * *'  # 10:00 Italia
-    - cron: '0 12 * * *' # 13:00 Italia
-    - cron: '0 15 * * *' # 16:00 Italia
+    - cron: '0 * * * *' # Ogni ora allo scoccare del tempo
   workflow_dispatch:
 
 jobs:
