@@ -1,26 +1,22 @@
-name: Wyckoff Scanner Pipeline
-
+name: Wyckoff Scanner
 on:
   schedule:
-    - cron: '0 * * * *'  # Esegue allo scoccare di ogni ora
-  workflow_dispatch:     # Permette di testarlo manualmente cliccando su "Run workflow"
+    - cron: '0 9 * * *'  # 10:00 Italia
+    - cron: '0 12 * * *' # 13:00 Italia
+    - cron: '0 15 * * *' # 16:00 Italia
+  workflow_dispatch:
 
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout del codice
-        uses: actions/checkout@v2
-
-      - name: Configura Python
+      - uses: actions/checkout@v2
+      - name: Set up Python
         uses: actions/setup-python@v2
-        with:
-          python-version: '3.9'
-
-      - name: Installa le dipendenze
-        run: pip install -r requirements.txt
-
-      - name: Esecuzione Scanner
+        with: {python-version: '3.9'}
+      - name: Install dependencies
+        run: pip install yfinance pandas requests matplotlib
+      - name: Esecuzione
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
