@@ -21,9 +21,21 @@ for ticker in symbols:
         
         distanza = abs(prezzo - p_livello) / p_livello
         
-        # Logica di notifica
-        semaforo = "🔴" if distanza < 0.002 else ("🟡" if distanza < 0.01 else "⚪")
-        stato = "INGRESSO" if distanza < 0.002 else ("AVVICINAMENTO" if distanza < 0.01 else "LONTANO")
+        # LOGICA TEST: Forziamo l'invio per TUTTI i ticker
+        if distanza < 0.002: 
+            semaforo, stato = "🔴", "INGRESSO IMMEDIATO"
+        elif distanza < 0.01: 
+            semaforo, stato = "🟡", "IN AVVICINAMENTO"
+        else: 
+            semaforo, stato = "⚪", "LONTANO"
+        
+        # Ora il codice prosegue SEMPRE verso il grafico e l'invio
+        msg = f"{semaforo} {ticker}\nStato: {stato}\nTarget: {p_livello:.2f}"
+        mpf.plot(df.iloc[-50:], type='candle', style='charles', savefig='plot.png')
+        
+        # Invio (ora questo viene eseguito per ogni ticker, senza filtri)
+        send_telegram(msg, 'plot.png')
+        print(f"Messaggio inviato per {ticker}")
         
         msg = f"{semaforo} {ticker}\nStato: {stato}\nTarget: {p_livello:.2f}"
         
