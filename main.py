@@ -41,7 +41,7 @@ for ticker in symbols:
         
         prezzo = df['Close'].iloc[-1]
         distanza = abs(prezzo - p_livello) / p_livello
-        if distanza > 0.01: continue
+        # Aumentiamo la soglia a 0.5 (50%) per forzare il bot a inviare messaggi if distanza > 0.5: continue
         semaforo = "🔴" if distanza < 0.002 else "🟡"
 
         # Grafico a candele
