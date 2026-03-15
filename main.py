@@ -35,21 +35,35 @@ for ticker in symbols:
         high_r = df['High'].rolling(137).max().iloc[-1]
         low_r = df['Low'].rolling(137).min().iloc[-1]
         range_h = high_r - low_r
-        p_livello = low_r - (range_h * 0.007 * 3.0) 
-        prezzo = df['Close'].iloc[-1]
         
+        p_livello = low_r - (range_h * 0.007 * 3.0) 
+        tp = p_livello + (range_h * 0.015)
+        sl = p_livello - (range_h * 0.005)
+        
+        prezzo = df['Close'].iloc[-1]
         distanza = abs(prezzo - p_livello) / p_livello
         
+        # --- FILTRO SENTINELLA ---
         if distanza < 0.002: semaforo, stato = "🔴", "INGRESSO IMMEDIATO"
         elif distanza < 0.01: semaforo, stato = "🟡", "IN AVVICINAMENTO"
-        else: semaforo, stato = "⚪", "LONTANO"
+        else: continue # <--- QUI IL BOT SALTA I "LONTANI" E NON MANDA MSG
         
-        msg = f"{semaforo} {ticker}\nStato: {stato}\nTarget: {p_livello:.2f}"
+        # --- GRAFICO CON LINEE ---
+        plot_data = df.iloc[-50:]
+        alines = dict(alines=[
+            [(plot_data.index[0], p_livello), (plot_data.index[-1], p_livello)], 
+            [(plot_data.index[0], tp), (plot_data.index[-1], tp)],             
+            [(plot_data.index[0], sl), (plot_data.index[-1], sl)]              
+        ], colors=['blue', 'green', 'red'], linestyle='-.')
         
-        # --- GRAFICO E INVIO ---
-        mpf.plot(df.iloc[-50:], type='candle', style='charles', savefig='plot.png', volume=False)
+        mpf.plot(plot_data, type='candle', style='charles', savefig='plot.png', 
+                 alines=alines, volume=False)
+        
+        # --- MESSAGGIO ---
+        msg = (f"{semaforo} {ticker}\nStato: {stato}\n"
+               f"P_Livello: {p_livello:.2f}\nTP: {tp:.2f} | SL: {sl:.2f}")
+        
         send_telegram(msg, 'plot.png')
-        
         print(f"Messaggio inviato per {ticker}")
         time.sleep(2)
         
