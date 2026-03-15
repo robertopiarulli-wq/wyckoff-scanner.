@@ -15,7 +15,7 @@ jobs:
         uses: actions/setup-python@v2
         with: {python-version: '3.9'}
       - name: Install dependencies
-        run: pip install yfinance pandas requests matplotlib
+        run: pip install -r requirements.txt
       - name: Esecuzione
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
