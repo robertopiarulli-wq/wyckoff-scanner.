@@ -28,10 +28,13 @@ for ticker in symbols:
         prezzo = df['Close'].iloc[-1]
         distanza = abs(prezzo - p_livello) / p_livello
         
-        # LOGICA SCANNER: Filtriamo per non intasare Telegram
-        if distanza < 0.002: semaforo, stato = "🔴", "INGRESSO IMMEDIATO"
-        elif distanza < 0.01: semaforo, stato = "🟡", "IN AVVICINAMENTO"
-        else: continue # <--- QUI LO SCANNER "SILENZIA" I TICKER LONTANI
+       # LOGICA SCANNER: Modificata per il TEST (non salta più nulla)
+        if distanza < 0.002: 
+            semaforo, stato = "🔴", "INGRESSO IMMEDIATO"
+        elif distanza < 0.01: 
+            semaforo, stato = "🟡", "IN AVVICINAMENTO"
+        else: 
+            semaforo, stato = "⚪", "LONTANO"  # <--- INVECE DI 'continue', ASSEGNAMO IL VALORE
         
         # Se arriviamo qui, il ticker è interessante (Rosso o Giallo)
         msg = f"{semaforo} {ticker}\nStato: {stato}\nTarget: {p_livello:.2f}"
