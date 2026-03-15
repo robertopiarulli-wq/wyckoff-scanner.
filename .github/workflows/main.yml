@@ -1,21 +1,29 @@
-name: Wyckoff Scanner
+name: run-scanner
+
 on:
   schedule:
-    - cron: '0 * * * *' # Ogni ora allo scoccare del tempo
-  workflow_dispatch:
+    - cron: '0 * * * *' # Gira ogni ora
+  workflow_dispatch: # Ti permette di avviarlo manualmente
 
 jobs:
-  run-scanner:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Set up Python
-        uses: actions/setup-python@v2
-        with: {python-version: '3.9'}
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Esecuzione
+
+      - name: Run script
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python main.py
