@@ -1,68 +1,59 @@
 import yfinance as yf
 import requests
 import os
-import matplotlib.pyplot as plt
+import mplfinance as mpf
+import pandas as pd
 import numpy as np
 
 TOKEN = os.environ['TELEGRAM_TOKEN']
 CHAT_ID = os.environ['CHAT_ID']
 
-def send_telegram(name, ticker, semaforo, p_livello, img_path):
+# Mappa Ticker Yahoo -> Nome MT5
+MT5_MAP = {
+    "HG=F": "HG1!", "GC=F": "XAUUSD", "BTC-USD": "BTCUSD", 
+    "EURUSD=X": "EURUSD", "CL=F": "WTI", "ES=F": "US500"
+}
+
+def send_telegram(mt5_name, ticker, semaforo, p_livello, tp, sl, img_path):
     url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
     with open(img_path, 'rb') as photo:
-        caption = f"{semaforo} {name} ({ticker})\nLivello: {p_livello:.2f}"
-        files = {'photo': photo}
-        data = {'chat_id': CHAT_ID, 'caption': caption}
-        requests.post(url, files=files, data=data)
+        caption = (f"{semaforo} {mt5_name} (Yahoo: {ticker})\n"
+                   f"P_Livello: {p_livello:.2f}\n"
+                   f"TP: {tp:.2f} | SL: {sl:.2f}")
+        requests.post(url, files={'photo': photo}, data={'chat_id': CHAT_ID, 'caption': caption})
 
 with open('tickers.txt', 'r') as f:
     symbols = [line.strip() for line in f if line.strip() and not line.startswith('#')]
 
 for ticker in symbols:
     try:
-        # Download con auto_adjust=True per pulire i dati
         df = yf.download(ticker, period="3mo", interval="1h", progress=False, auto_adjust=True)
-        
-        if df.empty or len(df) < 137:
-            continue
+        if df.empty or len(df) < 137: continue
             
-        # Forza la trasformazione in array numpy piatti per evitare l'ambiguità
-        high_s = df['High'].values
-        low_s = df['Low'].values
-        close_s = df['Close'].values
-        
-        # Calcolo rolling manuale su array numpy per evitare conflitti con Pandas Series
-        def rolling_min(arr, window):
-            return np.min([arr[i-window+1:i+1] for i in range(window-1, len(arr))], axis=0)
-        
-        def rolling_max(arr, window):
-            return np.max([arr[i-window+1:i+1] for i in range(window-1, len(arr))], axis=0)
-
-        high_r = np.max(high_s[-137:])
-        low_r = np.min(low_s[-137:])
-        
+        high_r = df['High'].rolling(137).max().iloc[-1]
+        low_r = df['Low'].rolling(137).min().iloc[-1]
         range_h = high_r - low_r
+        
         p_livello = low_r - (range_h * 0.007 * 3.0) 
+        # Logica arbitraria TP/SL basata su Range
+        tp = p_livello + (range_h * 0.015)
+        sl = p_livello - (range_h * 0.005)
         
-        prezzo_attuale = close_s[-1]
-        distanza = abs(prezzo_attuale - p_livello) / p_livello
-        
-        # Logica Semaforo
-        if distanza < 0.002: semaforo = "🔴"
-        elif distanza < 0.01: semaforo = "🟡"
-        else: continue 
+        prezzo = df['Close'].iloc[-1]
+        distanza = abs(prezzo - p_livello) / p_livello
+        if distanza > 0.01: continue
+        semaforo = "🔴" if distanza < 0.002 else "🟡"
 
-        # Grafico
-        plt.figure(figsize=(10, 5))
-        plt.plot(close_s[-100:], label='Prezzo')
-        plt.axhline(y=p_livello, color='blue', linestyle='--', label='P_Livello')
-        plt.title(f"Setup Wyckoff: {ticker}")
-        plt.legend()
-        plt.savefig("plot.png")
-        plt.close()
+        # Grafico a candele
+        plot_df = df.iloc[-50:] # Ultimi 50 periodi
+        alines = [dict(alines=[(plot_df.index[0], p_livello), (plot_df.index[-1], p_livello)], colors='blue', linestyle='--'),
+                  dict(alines=[(plot_df.index[0], tp), (plot_df.index[-1], tp)], colors='green', linestyle='-'),
+                  dict(alines=[(plot_df.index[0], sl), (plot_df.index[-1], sl)], colors='red', linestyle='-')]
         
-        send_telegram(ticker, ticker, semaforo, p_livello, "plot.png")
+        mpf.plot(plot_df, type='candle', style='charles', savefig='plot.png', alines=alines, title=ticker)
+        
+        mt5_name = MT5_MAP.get(ticker, ticker)
+        send_telegram(mt5_name, ticker, semaforo, p_livello, tp, sl, 'plot.png')
         
     except Exception as e:
-        print(f"Errore su {ticker}: {e}")
         continue
