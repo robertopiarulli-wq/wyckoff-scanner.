@@ -24,6 +24,32 @@ for ticker in symbols:
     try:
         df = yf.download(ticker, period="3mo", interval="1h", progress=False, auto_adjust=True)
         if df.empty or len(df) < 137: continue
+        
+        # --- PULIZIA DATI PER MPLFINANCE ---
+        # Assicuriamoci che tutte le colonne siano float
+        df = df.apply(pd.to_numeric, errors='coerce')
+        # Rimuoviamo eventuali righe vuote
+        df = df.dropna()
+        # Assicuriamoci che i nomi siano quelli corretti
+        df.columns = [c.capitalize() for c in df.columns] 
+        
+        # Estrarre valori per i calcoli
+        high_s = df['High'].values
+        low_s = df['Low'].values
+        close_s = df['Close'].values
+        
+        # ... (il resto del tuo calcolo p_livello e distanza rimane uguale) ...
+        
+        # Creazione grafico con pulizia extra
+        # Se manca il Volume, mplfinance crasha, lo creiamo fittizio
+        if 'Volume' not in df.columns:
+            df['Volume'] = 0
+            
+        mpf.plot(df.iloc[-50:], type='candle', style='charles', savefig='plot.png', volume=False)
+        
+        # Invio
+        send_telegram(msg, 'plot.png')
+        print(f"Messaggio inviato per {ticker}")
             
         # Estrarre i valori come numpy array per evitare l'errore di ambiguità
         high_s = df['High'].values
