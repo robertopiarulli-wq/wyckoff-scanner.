@@ -25,9 +25,13 @@ def send_telegram(msg, img_path):
     url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
     try:
         with open(img_path, 'rb') as photo:
-            requests.post(url, files={'photo': photo}, data={'chat_id': CHAT_ID, 'caption': msg})
+            r = requests.post(url, files={'photo': photo}, data={'chat_id': CHAT_ID, 'caption': msg})
+            if r.status_code != 200:
+                print(f"ERRORE TELEGRAM: {r.status_code} - {r.text}")
+            else:
+                print(f"Messaggio Telegram inviato con successo!")
     except Exception as e:
-        print(f"Errore invio Telegram: {e}")
+        print(f"Errore critico invio Telegram: {e}")
 
 def salva_segnale_db(ticker, ingresso, tp, sl, fase):
     try:
