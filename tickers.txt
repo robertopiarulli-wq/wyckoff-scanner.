@@ -15,7 +15,7 @@ ES=F
 NQ=F
 YM=F
 RTY=F
-DAX=F
+GDAXI
 
 # --- COMMODITIES ---
 GC=F
@@ -25,7 +25,7 @@ CL=F
 NG=F
 PA=F
 PL=F
-TT=F
+CT=F
 KC=F
 ZC=F
 ZS=F
