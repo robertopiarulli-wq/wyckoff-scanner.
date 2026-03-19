@@ -31,14 +31,19 @@ MAPPA_ASSET = {
 CORRELAZIONI = {"CSSPX.MI": "^GSPC", "ANX.MI": "^NDX", "SGLD.MI": "GC=F"}
 
 def calcola_indicatori(df):
+    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    # Bollinger & Volumi
     df['MA20'] = df['Close'].rolling(20).mean()
     df['StdDev'] = df['Close'].rolling(20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
+    df['Vol_MA_Short'] = df['Volume'].rolling(5).mean()
+    df['Vol_MA_Long'] = df['Volume'].rolling(20).mean()
+    # ATR
     hl, hc, lc = df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     return df
@@ -50,8 +55,7 @@ def main():
     cache = {}
     for t in symbols:
         try:
-            # Ritorno a 4h come da tua strategia originale
-            df = yf.download(t, period="2mo", interval="4h", progress=False, auto_adjust=True)
+            df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 137: continue
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
@@ -65,21 +69,21 @@ def main():
                 "p": p, "rsi": df['RSI'].iloc[-1], "dist": abs(p - lvl)/lvl, "lvl": lvl,
                 "tp": lvl + (range_h * 1.37) if is_acc else lvl - (range_h * 1.37),
                 "sl": lvl - (df['ATR'].iloc[-1] * 1.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 1.5),
-                "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE", "df": df
+                "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE", 
+                "vol_status": df['Vol_MA_Short'].iloc[-1] < df['Vol_MA_Long'].iloc[-1],
+                "df": df
             }
         except: continue
 
     for t, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA:
-            # FIX LOGICA RSI SPECIALE
+            # Setup RSI e Azione
             if d['fase'] == "ACCUMULAZIONE":
                 conf_rsi = (20 <= d['rsi'] <= 40)
-                rsi_target = "20-40"
-                azione = "BUY LIMIT"
+                rsi_target, azione = "20-40", "BUY LIMIT"
             else:
                 conf_rsi = (60 <= d['rsi'] <= 80)
-                rsi_target = "60-80"
-                azione = "SELL LIMIT"
+                rsi_target, azione = "60-80", "SELL LIMIT"
             
             asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
             ref = CORRELAZIONI.get(t)
@@ -87,17 +91,19 @@ def main():
             
             msg = (f"{asset['cat']} | 🎯 <b>CECCHINO</b>\n\n"
                    f"<b>Asset:</b> {t}\n"
-                   f"<b>Fase Wyckoff:</b> {d['fase']}\n"
                    f"<b>Azione:</b> <code>{azione}</code>\n"
                    f"<b>Prezzo:</b> {d['p']:.4f} (📍 {d['dist']:.2%}){msg_idx}\n\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
-                   f"🛡️ <b>CONFERMA RSI ({rsi_target}):</b> {'✅' if conf_rsi else '⚠️'} ({d['rsi']:.1f})")
+                   f"🛡️ <b>FILTRI PRE-ORDINE:</b>\n"
+                   f"{'✅' if conf_rsi else '⚠️'} RSI ({rsi_target}): {d['rsi']:.1f}\n"
+                   f"{'✅' if d['vol_status'] else '⚠️'} Trend: {'Esaurimento' if d['vol_status'] else 'Pressione'}\n\n"
+                   f"<i>Esaurimento = Ottimo per Limit Order</i>")
 
             plot_data = d['df'].iloc[-50:]
-            ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.5),
-                  mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.5)]
+            ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3),
+                  mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
             mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='plot.png', 
                      hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
             
