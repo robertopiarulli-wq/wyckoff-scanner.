@@ -35,29 +35,20 @@ MAPPA_ASSET = {
 CORRELAZIONI = {"CSSPX.MI": "^GSPC", "ANX.MI": "^NDX", "SGLD.MI": "GC=F"}
 
 def calcola_indicatori(df):
-    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    # Bollinger
     df['MA20'] = df['Close'].rolling(window=20).mean()
     df['StdDev'] = df['Close'].rolling(window=20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
-    # ATR per SL
-    high_low = df['High'] - df['Low']
-    high_close = (df['High'] - df['Close'].shift()).abs()
-    low_close = (df['Low'] - df['Close'].shift()).abs()
-    df['ATR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1).rolling(14).mean()
+    # ATR corretto per SL
+    hl = df['High'] - df['Low']
+    hc = (df['High'] - df['Close'].shift()).abs()
+    lc = (df['Low'] - df['Close'].shift()).abs()
+    df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     return df
-
-def send_telegram(msg, img_path):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-    try:
-        with open(img_path, 'rb') as photo:
-            requests.post(url, files={'photo': photo}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
-    except: pass
 
 def main():
     try:
@@ -73,8 +64,7 @@ def main():
             prezzo = df['Close'].iloc[-1]
             high_r, low_r = df['High'].rolling(137).max().iloc[-1], df['Low'].rolling(137).min().iloc[-1]
             range_h = high_r - low_r
-            mid_p = (high_r + low_r) / 2
-            is_acc = prezzo < mid_p
+            is_acc = prezzo < (high_r + low_r) / 2
             
             lvl = low_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else high_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             tp = lvl + (range_h * 1.37) if is_acc else lvl - (range_h * 1.37)
@@ -83,38 +73,39 @@ def main():
             cache[ticker] = {
                 "p": prezzo, "rsi": df['RSI'].iloc[-1], "dist": abs(prezzo - lvl)/lvl, "lvl": lvl, "tp": tp, "sl": sl,
                 "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE",
-                "trend": "RIBAZZISTA (Sotto Media)" if prezzo < mid_p else "RIALZISTA (Sopra Media)",
+                "trend": "RIBASSISTA" if prezzo < df['MA20'].iloc[-1] else "RIALZISTA",
                 "df": df
             }
         except: continue
 
     for ticker, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA:
+            # FILTRO ORO RSI: tra 20 e 40 per Buy, tra 60 e 80 per Sell
+            conf_rsi = (20 <= d['rsi'] <= 40) if d['fase'] == "ACCUMULAZIONE" else (60 <= d['rsi'] <= 80)
+            
             asset = MAPPA_ASSET.get(ticker, {"cat": "📊 ASSET", "tv": ticker})
             ref = CORRELAZIONI.get(ticker)
             msg_idx = f"\n🔗 <b>INDICE ({ref}):</b> {cache[ref]['p']:.2f} (📍 {cache[ref]['dist']:.2%})" if ref in cache else ""
             
-            tipo_ordine = "BUY LIMIT" if d['fase'] == "ACCUMULAZIONE" else "SELL LIMIT"
-            istruzione = "COMPRARE su debolezza" if d['fase'] == "ACCUMULAZIONE" else "VENDERE su forza"
-            
             msg = (f"{asset['cat']} | 🎯 <b>CECCHINO</b>\n\n"
                    f"<b>Asset:</b> {ticker}\n"
                    f"<b>Fase Wyckoff:</b> {d['fase']}\n"
-                   f"<b>Trend Attuale:</b> {d['trend']}\n"
+                   f"<b>Trend:</b> {d['trend']}\n"
                    f"<b>Prezzo:</b> {d['p']:.4f} (📍 {d['dist']:.2%}){msg_idx}\n\n"
-                   f"⚙️ <b>OPERATIVITÀ CONTRARIAN:</b>\n"
-                   f"Tipo: <code>{tipo_ordine}</code> ({istruzione})\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
-                   f"🛡️ <b>CONFERME RSI:</b> {'✅' if (d['rsi']<40 or d['rsi']>60) else '⚠️'} ({d['rsi']:.1f})")
+                   f"🛡️ <b>CONFERMA RSI (20-40):</b> {'✅' if conf_rsi else '⚠️'} ({d['rsi']:.1f})")
 
             plot_data = d['df'].iloc[-50:]
             ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', width=0.8),
                   mpf.make_addplot(plot_data['LowerB'], color='gray', width=0.8)]
             mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='plot.png', 
                      hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
-            send_telegram(msg, 'plot.png')
+            
+            url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+            with open('plot.png', 'rb') as f:
+                requests.post(url, files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
 
 if __name__ == "__main__":
     main()
