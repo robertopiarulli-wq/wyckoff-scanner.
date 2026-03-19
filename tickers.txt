@@ -1,15 +1,13 @@
-# --- INDICI & FUTURES ---
+# --- INDICI GUIDA (Sempre in cima per la Combo) ---
 ^GSPC
 ^NDX
-^DJI
 ^GDAXI
 FTSEMIB.MI
 GC=F
 SI=F
 CL=F
-NG=F
 
-# --- ETF/ETC OPERATIVI (Versioni stabili) ---
+# --- ETF / ETC OPERATIVI ---
 CSSPX.MI
 ANX.MI
 DAX2ST.MI
@@ -20,18 +18,13 @@ PHAG.MI
 IK00.MI
 CRUD.MI
 
-# --- CRYPTO ETP (Versioni Xetra - Più stabili per Yahoo) ---
+# --- CRYPTO & FOREX ---
 BTCE.DE
-ETHE.DE
-VBTC.DE
-VETH.DE
-
-# --- FOREX ---
+ETH-USD
 EURUSD=X
 GBPUSD=X
-USDJPY=X
 
 # --- SOFT COMMODITIES ---
-CT=F
 KC=F
 SB=F
+NG=F
