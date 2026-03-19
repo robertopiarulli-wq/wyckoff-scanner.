@@ -21,9 +21,8 @@ MOLTIPLICATORE_QUANTUM = 2.618
 SOGLIA_NOTIFICA = 0.02
 DISTANZA_INGRESSO = 0.006
 
-# --- MAPPA ASSET COMPLETA (Sincronizzata con tickers.txt) ---
+# --- MAPPA ASSET COMPLETA ---
 MAPPA_ASSET = {
-    # INDICI & FUTURES
     "^GSPC": {"mt5": "S&P500", "cat": "📈 INDICE USA", "tv": "SPX"},
     "^NDX":  {"mt5": "NAS100", "cat": "📈 INDICE TECH", "tv": "NDX"},
     "^DJI":  {"mt5": "DOW30", "cat": "📈 INDICE BLUECHIP", "tv": "DJI"},
@@ -37,47 +36,22 @@ MAPPA_ASSET = {
     "CL=F": {"mt5": "CRUDE OIL", "cat": "🛢️ ENERGY", "tv": "USOIL"},
     "NG=F": {"mt5": "NAT GAS", "cat": "🛢️ ENERGY", "tv": "NATGAS"},
     "BZ=F": {"mt5": "BRENT", "cat": "🛢️ ENERGY", "tv": "UKOIL"},
-
-    # ETF & ETC OPERATIVI (BORSA ITA / DIRECTA)
     "CSSPX.MI": {"mt5": "S&P500", "cat": "🇮🇹 ETF AZIONARI", "tv": "MIL:CSSPX"},
     "CNDX.MI":  {"mt5": "NAS100", "cat": "🇮🇹 ETF AZIONARI", "tv": "MIL:CNDX"},
     "DAX2ST.MI": {"mt5": "GER40", "cat": "🇮🇹 ETF AZIONARI", "tv": "MIL:DAX2ST"},
     "ETFMIB.MI": {"mt5": "ITA40", "cat": "🇮🇹 ETF AZIONARI", "tv": "MIL:ETFMIB"},
     "SWDA.MI": {"mt5": "WORLD", "cat": "🌍 ETF GLOBALI", "tv": "MIL:SWDA"},
-    "IEMM.MI": {"mt5": "EMERGING", "cat": "🌍 ETF GLOBALI", "tv": "MIL:IEMM"},
-    "UST.MI":  {"mt5": "NAS100_LEV", "cat": "🇮🇹 ETF LEVA", "tv": "MIL:UST"},
     "SGLD.MI": {"mt5": "GOLD", "cat": "⛏️ ETC REALE", "tv": "MIL:SGLD"},
     "PHAG.MI": {"mt5": "SILVER", "cat": "⛏️ ETC REALE", "tv": "MIL:PHAG"},
-    "COPA.MI": {"mt5": "COPPER", "cat": "⛏️ ETC REALE", "tv": "MIL:COPA"},
-    "CRUD.MI": {"mt5": "OIL", "cat": "🛢️ ETC REALE", "tv": "MIL:CRUD"},
-    "NGAS.MI": {"mt5": "NATGAS", "cat": "🛢️ ETC REALE", "tv": "MIL:NGAS"},
-    "BRNT.MI": {"mt5": "BRENT", "cat": "🛢️ ETC REALE", "tv": "MIL:BRNT"},
-
-    # BOND & SETTORIALI
-    "TLT": {"mt5": "TREASURY_20Y", "cat": "🏦 BONDS", "tv": "TLT"},
-    "BTP=F": {"mt5": "BTP_FUT", "cat": "🏦 BONDS ITA", "tv": "EUREX:FBTP1!"},
-    "XLK": {"mt5": "TECH_SEC", "cat": "Sector: TECH", "tv": "XLK"},
-    "XLE": {"mt5": "ENERGY_SEC", "cat": "Sector: ENERGY", "tv": "XLE"},
-    "XLF": {"mt5": "FINANCE_SEC", "cat": "Sector: FINANCE", "tv": "XLF"},
-
-    # CRYPTO & ETP
-    "BTC-USD": {"mt5": "BTCUSD", "cat": "🌐 CRYPTO SPOT", "tv": "BTCUSD"},
-    "ETH-USD": {"mt5": "ETHUSD", "cat": "🌐 CRYPTO SPOT", "tv": "ETHUSD"},
     "BTCE.MI": {"mt5": "BTCUSD", "cat": "🌐 CRYPTO ETP", "tv": "MIL:BTCE"},
-    "ETHE.MI": {"mt5": "ETHUSD", "cat": "🌐 CRYPTO ETP", "tv": "MIL:ETHE"},
-    "ASOL.MI": {"mt5": "SOLUSD", "cat": "🌐 CRYPTO ETP", "tv": "MIL:ASOL"},
-
-    # FOREX
     "EURUSD=X": {"mt5": "EURUSD", "cat": "💱 FOREX", "tv": "FX:EURUSD"},
-    "GBPUSD=X": {"mt5": "GBPUSD", "cat": "💱 FOREX", "tv": "FX:GBPUSD"},
-    "USDJPY=X": {"mt5": "USDJPY", "cat": "💱 FOREX", "tv": "FX:USDJPY"}
+    "BTC-USD": {"mt5": "BTCUSD", "cat": "🌐 CRYPTO SPOT", "tv": "BTCUSD"}
 }
 
-# --- MAPPA CORRELAZIONI (ETF -> INDICE) ---
 CORRELAZIONI = {
     "CSSPX.MI": "^GSPC", "CNDX.MI": "^NDX", "DAX2ST.MI": "^GDAXI",
     "ETFMIB.MI": "FTSEMIB.MI", "SGLD.MI": "GC=F", "PHAG.MI": "SI=F",
-    "BTCE.MI": "BTC-USD", "CRUD.MI": "CL=F", "NGAS.MI": "NG=F"
+    "BTCE.MI": "BTC-USD"
 }
 
 # --- FUNZIONI TECNICHE ---
@@ -91,6 +65,7 @@ def calcola_atr(df, window=14):
 def pulisci_invalidati(ticker, prezzo_ora):
     if not supabase: return
     try:
+        # Usiamo 'sl' come da tua tabella
         res = supabase.table("segnali_trading").select("*").eq("ticker", ticker).eq("stato", "Pendente").execute()
         for rec in res.data:
             if (rec['fase'] == "Acc" and prezzo_ora <= rec['sl']) or (rec['fase'] == "Dist" and prezzo_ora >= rec['sl']):
@@ -100,8 +75,9 @@ def pulisci_invalidati(ticker, prezzo_ora):
 def gestisci_tracking(ticker, fase, dist_attuale):
     if not supabase: return True, False, None, 999.0
     try:
+        # Usiamo 'data_segnale' come da tua tabella
         limite = (datetime.now() - timedelta(hours=12)).isoformat()
-        res = supabase.table("segnali_trading").select("*").eq("ticker", ticker).eq("fase", fase).gt("created_at", limite).execute()
+        res = supabase.table("segnali_trading").select("*").eq("ticker", ticker).eq("fase", fase).gt("data_segnale", limite).execute()
         if not res.data: return True, False, None, 999.0
         record = res.data[0]
         dist_prec = record.get('distanza_minima_raggiunta', 999.0)
@@ -116,35 +92,28 @@ def send_telegram(msg, img_path):
     try:
         with open(img_path, 'rb') as photo:
             requests.post(url, files={'photo': photo}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
-    except Exception as e: print(f"Errore Telegram: {e}")
+    except: pass
 
-# --- ESECUZIONE CORE ---
+# --- ESECUZIONE ---
 def main():
     try:
         symbols = [line.strip() for line in open('tickers.txt', 'r') if line.strip() and not line.startswith('#')]
-    except: 
-        print("Errore: tickers.txt non trovato."); return
+    except: return
 
     cache_risultati = {}
 
     for ticker in symbols:
         try:
-            # Download dati (4 mesi per avere storico per rolling 137)
             df = yf.download(ticker, period="6mo", interval="4h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 137: continue
-            
-            # Normalizzazione colonne per gestire multi-index di yfinance
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             
             prezzo_ora = df['Close'].iloc[-1]
             atr = calcola_atr(df)
             pulisci_invalidati(ticker, prezzo_ora)
             
-            # Logica Quantica
-            high_r = df['High'].rolling(137).max().iloc[-1]
-            low_r = df['Low'].rolling(137).min().iloc[-1]
-            range_h = high_r - low_r
-            mid_p = (high_r + low_r) / 2.0
+            high_r, low_r = df['High'].rolling(137).max().iloc[-1], df['Low'].rolling(137).min().iloc[-1]
+            range_h, mid_p = (high_r - low_r), (high_r + low_r) / 2.0
             is_acc = prezzo_ora < mid_p
             fase_attuale = "Acc" if is_acc else "Dist"
             
@@ -170,7 +139,7 @@ def main():
                                   colors=['blue', 'green', 'red'], linestyle='-.')
                     mpf.plot(plot_data, type='candle', style='charles', savefig='plot.png', alines=alines, title=f"{ticker}")
                     
-                    # Logica Combo (Correlazione)
+                    # Logica Combo
                     msg_indice = ""
                     indice_ref = CORRELAZIONI.get(ticker)
                     if indice_ref in cache_risultati:
@@ -182,18 +151,23 @@ def main():
                            f"<b>Prezzo:</b> {prezzo_ora:.4f} (📍 {distanza:.2%}){msg_indice}\n\n"
                            f"🔵 <b>LIVELLO: {p_livello:.4f}</b>\n"
                            f"🟢 <b>TP: {tp:.4f}</b>\n"
-                           f"🔴 <b>SL: {sl:.4f}</b>\n\n"
-                           f"🛰 <i>Verifica su TradingView con ticker sopra.</i>")
+                           f"🔴 <b>SL: {sl:.4f}</b>")
                     
                     send_telegram(msg, 'plot.png')
                     
                     if is_nuovo and supabase:
+                        # Usiamo i nomi esatti della tua tabella
                         supabase.table("segnali_trading").insert({
-                            "ticker": ticker, "prezzo_ingresso": float(p_livello), "tp": float(tp), "sl": float(sl), 
-                            "fase": fase_attuale, "distanza_minima_raggiunta": float(distanza), "stato": "Pendente"
+                            "ticker": ticker, 
+                            "prezzo_ingresso": float(p_livello), 
+                            "tp": float(tp), 
+                            "sl": float(sl), 
+                            "fase": fase_attuale, 
+                            "distanza_minima_raggiunta": float(distanza), 
+                            "stato": "Pendente"
                         }).execute()
                         
-        except Exception as e: print(f"Errore su {ticker}: {e}")
+        except Exception as e: print(f"Errore {ticker}: {e}")
 
 if __name__ == "__main__":
     main()
