@@ -104,7 +104,7 @@ def main():
 
     for ticker in symbols:
         try:
-            df = yf.download(ticker, period="6mo", interval="4h", progress=False, auto_adjust=True)
+            df = yf.download(ticker, period="3mo", interval="4h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 137: continue
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             
