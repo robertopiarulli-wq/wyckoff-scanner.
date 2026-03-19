@@ -111,7 +111,7 @@ def main():
     for ticker in symbols:
         try:
             # Download con timeframe 4h e periodo 6 mesi per media 137
-            df = yf.download(ticker, period="6mo", interval="4h", progress=False, auto_adjust=True)
+            df = yf.download(ticker, period="1mo", interval="1h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 137: continue
             
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
