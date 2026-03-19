@@ -1,71 +1,37 @@
-# --- INDICI & FUTURES GUIDA (Sottostanti) ---
+# --- INDICI & FUTURES ---
 ^GSPC
 ^NDX
 ^DJI
 ^GDAXI
 FTSEMIB.MI
-^STOXX50E
-^FCHI
 GC=F
 SI=F
-HG=F
 CL=F
 NG=F
-BZ=F
 
-# --- ETF AZIONARI (Operativi Borsa Italiana) ---
+# --- ETF/ETC OPERATIVI (Versioni stabili) ---
 CSSPX.MI
-CNDX.MI
+ANX.MI
 DAX2ST.MI
 ETFMIB.MI
 SWDA.MI
-IEMM.MI
-UST.MI
-EUE.MI
-EXS1.MI
-
-# --- ETC METALLI & ENERGIA (Operativi Borsa Italiana) ---
 SGLD.MI
 PHAG.MI
-COPA.MI
+IK00.MI
 CRUD.MI
-NGAS.MI
-BRNT.MI
-PLTM.MI
 
-# --- SETTORIALI & BOND (TradingView/Directa) ---
-XLK
-XLE
-XLF
-XLV
-XLI
-TLT
-BTP=F
-EMB
+# --- CRYPTO ETP (Versioni Xetra - Più stabili per Yahoo) ---
+BTCE.DE
+ETHE.DE
+VBTC.DE
+VETH.DE
 
-# --- CRYPTO (Spot & ETP Borsa Italiana) ---
-BTC-USD
-ETH-USD
-SOL-USD
-ADA-USD
-DOT-USD
-BTCE.MI
-ETHE.MI
-ASOL.MI
-AADA.MI
-
-# --- FOREX (Coppie Principali) ---
+# --- FOREX ---
 EURUSD=X
 GBPUSD=X
 USDJPY=X
-AUDUSD=X
-USDCAD=X
-USDCHF=X
-EURJPY=X
 
 # --- SOFT COMMODITIES ---
 CT=F
 KC=F
 SB=F
-ZC=F
-ZS=F
