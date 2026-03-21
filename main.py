@@ -31,19 +31,17 @@ MAPPA_ASSET = {
 CORRELAZIONI = {"CSSPX.MI": "^GSPC", "ANX.MI": "^NDX", "SGLD.MI": "GC=F"}
 
 def calcola_indicatori(df):
-    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    # Bollinger & Volumi
     df['MA20'] = df['Close'].rolling(20).mean()
     df['StdDev'] = df['Close'].rolling(20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
-    df['Vol_MA_Short'] = df['Volume'].rolling(5).mean()
+    # Volumi: Short a 3 candele e Long a 20
+    df['Vol_MA_Short'] = df['Volume'].rolling(3).mean()
     df['Vol_MA_Long'] = df['Volume'].rolling(20).mean()
-    # ATR
     hl, hc, lc = df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     return df
@@ -65,41 +63,47 @@ def main():
             is_acc = p < (h_r + l_r) / 2
             
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
+            
+            # Parametri RSI
+            rsi_val = df['RSI'].iloc[-1]
+            if is_acc:
+                conf_rsi = (20 <= rsi_val <= 40)
+                rsi_target, azione = "20-40", "BUY LIMIT"
+            else:
+                conf_rsi = (60 <= rsi_val <= 80)
+                rsi_target, azione = "60-80", "SELL LIMIT"
+            
+            # Volumi con tolleranza 10%
+            vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.1)
+
             cache[t] = {
-                "p": p, "rsi": df['RSI'].iloc[-1], "dist": abs(p - lvl)/lvl, "lvl": lvl,
+                "p": p, "rsi": rsi_val, "dist": abs(p - lvl)/lvl, "lvl": lvl,
                 "tp": lvl + (range_h * 1.37) if is_acc else lvl - (range_h * 1.37),
                 "sl": lvl - (df['ATR'].iloc[-1] * 1.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 1.5),
                 "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE", 
-                "vol_status": df['Vol_MA_Short'].iloc[-1] < df['Vol_MA_Long'].iloc[-1],
-                "df": df
+                "vol_status": vol_status, "conf_rsi": conf_rsi, "rsi_target": rsi_target,
+                "azione": azione, "df": df
             }
         except: continue
 
     for t, d in cache.items():
-        if d['dist'] < SOGLIA_NOTIFICA:
-            # Setup RSI e Azione
-            if d['fase'] == "ACCUMULAZIONE":
-                conf_rsi = (20 <= d['rsi'] <= 40)
-                rsi_target, azione = "20-40", "BUY LIMIT"
-            else:
-                conf_rsi = (60 <= d['rsi'] <= 80)
-                rsi_target, azione = "60-80", "SELL LIMIT"
+        # --- FILTRO D'USCITA: SOLO SE TUTTO È VERDE ---
+        if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
             
             asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
             ref = CORRELAZIONI.get(t)
             msg_idx = f"\n🔗 <b>INDICE ({ref}):</b> {cache[ref]['p']:.2f} (📍 {cache[ref]['dist']:.2%})" if ref in cache else ""
             
-            msg = (f"{asset['cat']} | 🎯 <b>CECCHINO</b>\n\n"
+            msg = (f"{asset['cat']} | 🎯 <b>SEGNALE GOLD</b>\n\n"
                    f"<b>Asset:</b> {t}\n"
-                   f"<b>Azione:</b> <code>{azione}</code>\n"
+                   f"<b>Azione:</b> <code>{d['azione']}</code>\n"
                    f"<b>Prezzo:</b> {d['p']:.4f} (📍 {d['dist']:.2%}){msg_idx}\n\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
-                   f"🛡️ <b>FILTRI PRE-ORDINE:</b>\n"
-                   f"{'✅' if conf_rsi else '⚠️'} RSI ({rsi_target}): {d['rsi']:.1f}\n"
-                   f"{'✅' if d['vol_status'] else '⚠️'} Trend: {'Esaurimento' if d['vol_status'] else 'Pressione'}\n\n"
-                   f"<i>Esaurimento = Ottimo per Limit Order</i>")
+                   f"🛡️ <b>FILTRI ATTIVI:</b>\n"
+                   f"✅ RSI ({d['rsi_target']}): {d['rsi']:.1f}\n"
+                   f"✅ Trend: Esaurimento Volumi")
 
             plot_data = d['df'].iloc[-50:]
             ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3),
