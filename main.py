@@ -17,6 +17,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 2.618 
 SOGLIA_NOTIFICA = 0.02
+SOGLIA_PANICO_INDICE = -1.25  # Filtro sicurezza: annulla segnali se l'indice crolla
 
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
@@ -27,9 +28,17 @@ MAPPA_ASSET = {
     "CSSPX.MI": {"cat": "🇮🇹 ETF USA", "tv": "MIL:CSSPX"},
     "ANX.MI": {"cat": "🇮🇹 ETF TECH", "tv": "MIL:ANX"},
     "SGLD.MI": {"cat": "⛏️ ETC ORO", "tv": "MIL:SGLD"},
-    "BTCE.DE": {"cat": "🌐 CRYPTO", "tv": "XETR:BTCE"}
+    "BTCE.DE": {"cat": "🌐 CRYPTO", "tv": "XETR:BTCE"},
+    "SWDA.MI": {"cat": "🌍 ETF WORLD", "tv": "MIL:SWDA"}
 }
-CORRELAZIONI = {"CSSPX.MI": "^GSPC", "ANX.MI": "^NDX", "SGLD.MI": "GC=F"}
+
+CORRELAZIONI = {
+    "CSSPX.MI": "^GSPC", 
+    "ANX.MI": "^NDX", 
+    "SGLD.MI": "GC=F",
+    "SWDA.MI": "^GSPC",
+    "BTCE.DE": "BTC-USD"
+}
 
 def calcola_indicatori(df):
     delta = df['Close'].diff()
@@ -40,7 +49,6 @@ def calcola_indicatori(df):
     df['StdDev'] = df['Close'].rolling(20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
-    # Volumi: Filtro di esaurimento (Tolleranza 10%)
     df['Vol_MA_Short'] = df['Volume'].rolling(3).mean()
     df['Vol_MA_Long'] = df['Volume'].rolling(20).mean()
     hl, hc, lc = df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()
@@ -71,7 +79,6 @@ def main():
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             
             rsi_val = df['RSI'].iloc[-1]
-            # --- OTTIMIZZAZIONE RSI: Più severo per evitare entrate premature ---
             if is_acc:
                 conf_rsi = (15 <= rsi_val <= 32)
                 rsi_target, azione = "15-32", "BUY LIMIT"
@@ -79,14 +86,11 @@ def main():
                 conf_rsi = (68 <= rsi_val <= 85)
                 rsi_target, azione = "68-85", "SELL LIMIT"
             
-            # FILTRO VOLUMI (CONFERMATO)
             vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.1)
 
             cache[t] = {
                 "p": p, "rsi": rsi_val, "dist": abs(p - lvl)/lvl, "lvl": lvl,
-                # TP ridotto per incassare prima (0.85 invece di 1.37)
                 "tp": lvl + (range_h * 0.85) if is_acc else lvl - (range_h * 0.85),
-                # SL allargato per sopravvivere alle finte (2.5 invece di 1.5)
                 "sl": lvl - (df['ATR'].iloc[-1] * 2.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 2.5),
                 "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE", 
                 "vol_status": vol_status, "conf_rsi": conf_rsi, "rsi_target": rsi_target,
@@ -96,23 +100,38 @@ def main():
 
     for t, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
-            # SALVATAGGIO SU SUPABASE (Mappatura corretta per la tua tabella)
+            
+            # --- FILTRO AUTOMATICO INDICE ---
+            indice_ticker = CORRELAZIONI.get(t)
+            idx_perf = 0
+            info_indice = ""
+            if indice_ticker:
+                try:
+                    idx_df = yf.download(indice_ticker, period="1d", progress=False)
+                    if not idx_df.empty:
+                        idx_now = idx_df['Close'].iloc[-1]
+                        idx_prev = idx_df['Open'].iloc[-1]
+                        idx_perf = ((idx_now / idx_prev) - 1) * 100
+                        info_indice = f"📊 <b>INDICE REF ({indice_ticker}):</b> {idx_now:.2f} ({idx_perf:+.2f}%)\n"
+                except:
+                    info_indice = "⚠️ Errore recupero indice rif.\n"
+
+            # Se l'indice crolla oltre la soglia, scartiamo il segnale
+            if idx_perf < SOGLIA_PANICO_INDICE:
+                print(f"DEBUG: Segnale su {t} scartato per crollo Indice ({idx_perf:.2f}%)")
+                continue
+
+            # --- SALVATAGGIO SU SUPABASE ---
             if supabase:
                 try:
-                    data_db = {
-                        "ticker": t,
-                        "azione": d['azione'],
-                        "entry": float(d['lvl']),
-                        "tp": float(d['tp']),
-                        "sl": float(d['sl']),
-                        "prezzo_attuale": float(d['p'])
-                    }
+                    data_db = {"ticker": t, "azione": d['azione'], "entry": float(d['lvl']), "tp": float(d['tp']), "sl": float(d['sl']), "prezzo_attuale": float(d['p'])}
                     supabase.table("segnali_trading").insert(data_db).execute()
                 except Exception as e: print(f"Errore DB: {e}")
 
-            # INVIO TELEGRAM
+            # --- INVIO TELEGRAM ---
             asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
-            msg = (f"{asset['cat']} | 🎯 <b>SEGNALE GOLD</b>\n\n"
+            msg = (f"{asset['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
+                   f"{info_indice}\n"
                    f"<b>Asset:</b> {t}\n"
                    f"<b>Azione:</b> <code>{d['azione']}</code>\n"
                    f"<b>Prezzo:</b> {d['p']:.4f}\n\n"
