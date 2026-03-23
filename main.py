@@ -40,7 +40,7 @@ def calcola_indicatori(df):
     df['StdDev'] = df['Close'].rolling(20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
-    # Volumi: Tolleranza basata su media 3 vs 20
+    # Volumi: Filtro di esaurimento (Tolleranza 10%)
     df['Vol_MA_Short'] = df['Volume'].rolling(3).mean()
     df['Vol_MA_Long'] = df['Volume'].rolling(20).mean()
     hl, hc, lc = df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()
@@ -48,7 +48,6 @@ def calcola_indicatori(df):
     return df
 
 def main():
-    # --- BLOCCO WEEKEND ---
     if datetime.now().weekday() > 4:
         print("Weekend: Cecchino a riposo.")
         return
@@ -72,20 +71,23 @@ def main():
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             
             rsi_val = df['RSI'].iloc[-1]
+            # --- OTTIMIZZAZIONE RSI: Più severo per evitare entrate premature ---
             if is_acc:
-                conf_rsi = (20 <= rsi_val <= 40)
-                rsi_target, azione = "20-40", "BUY LIMIT"
+                conf_rsi = (15 <= rsi_val <= 32)
+                rsi_target, azione = "15-32", "BUY LIMIT"
             else:
-                conf_rsi = (60 <= rsi_val <= 80)
-                rsi_target, azione = "60-80", "SELL LIMIT"
+                conf_rsi = (68 <= rsi_val <= 85)
+                rsi_target, azione = "68-85", "SELL LIMIT"
             
-            # Volumi con tolleranza 10% (1.1)
+            # FILTRO VOLUMI (CONFERMATO)
             vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.1)
 
             cache[t] = {
                 "p": p, "rsi": rsi_val, "dist": abs(p - lvl)/lvl, "lvl": lvl,
-                "tp": lvl + (range_h * 1.37) if is_acc else lvl - (range_h * 1.37),
-                "sl": lvl - (df['ATR'].iloc[-1] * 1.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 1.5),
+                # TP ridotto per incassare prima (0.85 invece di 1.37)
+                "tp": lvl + (range_h * 0.85) if is_acc else lvl - (range_h * 0.85),
+                # SL allargato per sopravvivere alle finte (2.5 invece di 1.5)
+                "sl": lvl - (df['ATR'].iloc[-1] * 2.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 2.5),
                 "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE", 
                 "vol_status": vol_status, "conf_rsi": conf_rsi, "rsi_target": rsi_target,
                 "azione": azione, "df": df
@@ -93,8 +95,22 @@ def main():
         except: continue
 
     for t, d in cache.items():
-        # --- SOLO SEGNALI GOLD ---
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
+            # SALVATAGGIO SU SUPABASE (Mappatura corretta per la tua tabella)
+            if supabase:
+                try:
+                    data_db = {
+                        "ticker": t,
+                        "azione": d['azione'],
+                        "entry": float(d['lvl']),
+                        "tp": float(d['tp']),
+                        "sl": float(d['sl']),
+                        "prezzo_attuale": float(d['p'])
+                    }
+                    supabase.table("segnali_trading").insert(data_db).execute()
+                except Exception as e: print(f"Errore DB: {e}")
+
+            # INVIO TELEGRAM
             asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
             msg = (f"{asset['cat']} | 🎯 <b>SEGNALE GOLD</b>\n\n"
                    f"<b>Asset:</b> {t}\n"
