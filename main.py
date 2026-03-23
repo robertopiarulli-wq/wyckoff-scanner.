@@ -4,6 +4,7 @@ import os
 import mplfinance as mpf
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from supabase import create_client
 
 # --- CONFIG ---
@@ -39,7 +40,7 @@ def calcola_indicatori(df):
     df['StdDev'] = df['Close'].rolling(20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
-    # Volumi: Short a 3 candele e Long a 20
+    # Volumi: Tolleranza basata su media 3 vs 20
     df['Vol_MA_Short'] = df['Volume'].rolling(3).mean()
     df['Vol_MA_Long'] = df['Volume'].rolling(20).mean()
     hl, hc, lc = df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()
@@ -47,9 +48,15 @@ def calcola_indicatori(df):
     return df
 
 def main():
+    # --- BLOCCO WEEKEND ---
+    if datetime.now().weekday() > 4:
+        print("Weekend: Cecchino a riposo.")
+        return
+
     try:
         symbols = [line.strip() for line in open('tickers.txt', 'r') if line.strip() and not line.startswith('#')]
     except: return
+    
     cache = {}
     for t in symbols:
         try:
@@ -64,7 +71,6 @@ def main():
             
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             
-            # Parametri RSI
             rsi_val = df['RSI'].iloc[-1]
             if is_acc:
                 conf_rsi = (20 <= rsi_val <= 40)
@@ -73,7 +79,7 @@ def main():
                 conf_rsi = (60 <= rsi_val <= 80)
                 rsi_target, azione = "60-80", "SELL LIMIT"
             
-            # Volumi con tolleranza 10%
+            # Volumi con tolleranza 10% (1.1)
             vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.1)
 
             cache[t] = {
@@ -87,17 +93,13 @@ def main():
         except: continue
 
     for t, d in cache.items():
-        # --- FILTRO D'USCITA: SOLO SE TUTTO È VERDE ---
+        # --- SOLO SEGNALI GOLD ---
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
-            
             asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
-            ref = CORRELAZIONI.get(t)
-            msg_idx = f"\n🔗 <b>INDICE ({ref}):</b> {cache[ref]['p']:.2f} (📍 {cache[ref]['dist']:.2%})" if ref in cache else ""
-            
             msg = (f"{asset['cat']} | 🎯 <b>SEGNALE GOLD</b>\n\n"
                    f"<b>Asset:</b> {t}\n"
                    f"<b>Azione:</b> <code>{d['azione']}</code>\n"
-                   f"<b>Prezzo:</b> {d['p']:.4f} (📍 {d['dist']:.2%}){msg_idx}\n\n"
+                   f"<b>Prezzo:</b> {d['p']:.4f}\n\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
