@@ -19,7 +19,6 @@ MOLTIPLICATORE_QUANTUM = 2.618
 SOGLIA_NOTIFICA = 0.02
 SOGLIA_PANICO_INDICE = -1.25 
 
-# MAPPA ASSET CON TICKER TRADINGVIEW (TV)
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
     "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC"},
@@ -123,14 +122,19 @@ def main():
 
             if supabase:
                 try:
-                    data_db = {"ticker": t, "fase": d['fase'], "stato": "In attesa", "prezzo_ingresso": float(d['lvl']), "tp": float(d['tp']), "sl": float(d['sl']), "distanza_minima_raggiunta": float(d['dist'])}
+                    data_db = {
+                        "ticker": t, "fase": d['fase'], "stato": "In attesa", 
+                        "prezzo_ingresso": float(d['lvl']), "tp": float(d['tp']), 
+                        "sl": float(d['sl']), "distanza_minima_raggiunta": float(d['dist'])
+                    }
                     supabase.table("segnali_trading").insert(data_db).execute()
                 except Exception as e: print(f"Errore DB: {e}")
 
-            # --- INVIO TELEGRAM OTTIMIZZATO ---
+            # --- INVIO TELEGRAM OTTIMIZZATO (I 3 FILTRI) ---
             asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
             tv_ticker = asset_info['tv']
             tv_link = f"https://it.tradingview.com/chart/?symbol={tv_ticker}"
+            check_idx = "✅" if idx_perf > SOGLIA_PANICO_INDICE else "⚠️"
 
             msg = (f"{asset_info['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
                    f"{info_indice}\n"
@@ -141,7 +145,10 @@ def main():
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
                    f"🔗 <a href='{tv_link}'>Grafico TradingView</a>\n\n"
-                   f"🛡️ <b>FILTRI:</b> RSI {d['rsi']:.1f} | Volumi OK")
+                   f"🛡️ <b>FILTRI ATTIVI:</b>\n"
+                   f"✅ <b>RSI ({d['rsi_target']}):</b> {d['rsi']:.1f}\n"
+                   f"✅ <b>Volumi:</b> Esaurimento OK\n"
+                   f"{check_idx} <b>Sentiment Indice:</b> Stabile")
 
             plot_data = d['df'].iloc[-50:]
             ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
