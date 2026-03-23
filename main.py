@@ -19,12 +19,13 @@ MOLTIPLICATORE_QUANTUM = 2.618
 SOGLIA_NOTIFICA = 0.02
 SOGLIA_PANICO_INDICE = -1.25 
 
+# MAPPA ASSET CON TICKER TRADINGVIEW (TV)
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
-    "^NDX":  {"cat": "📈 INDICE TECH", "tv": "NDX"},
+    "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC"},
     "^GDAXI": {"cat": "📈 INDICE DAX", "tv": "DAX"},
     "FTSEMIB.MI": {"cat": "📈 INDICE MIB", "tv": "FTSEMIB"},
-    "GC=F": {"cat": "⛏️ METALS", "tv": "GC1!"},
+    "GC=F": {"cat": "⛏️ METALS", "tv": "GOLD"},
     "CSSPX.MI": {"cat": "🇮🇹 ETF USA", "tv": "MIL:CSSPX"},
     "ANX.MI": {"cat": "🇮🇹 ETF TECH", "tv": "MIL:ANX"},
     "SGLD.MI": {"cat": "⛏️ ETC ORO", "tv": "MIL:SGLD"},
@@ -120,40 +121,31 @@ def main():
                 print(f"DEBUG: Segnale su {t} scartato per crollo Indice ({idx_perf:.2f}%)")
                 continue
 
-            # --- SALVATAGGIO SU SUPABASE (Sincronizzato con le tue colonne) ---
             if supabase:
                 try:
-                    data_db = {
-                        "ticker": t,
-                        "fase": d['fase'],           # Caricato in 'fase'
-                        "stato": "In attesa",         # Caricato in 'stato'
-                        "prezzo_ingresso": float(d['lvl']), # Caricato in 'prezzo_ingresso'
-                        "tp": float(d['tp']),
-                        "sl": float(d['sl']),
-                        "distanza_minima_raggiunta": float(d['dist'])
-                    }
+                    data_db = {"ticker": t, "fase": d['fase'], "stato": "In attesa", "prezzo_ingresso": float(d['lvl']), "tp": float(d['tp']), "sl": float(d['sl']), "distanza_minima_raggiunta": float(d['dist'])}
                     supabase.table("segnali_trading").insert(data_db).execute()
-                except Exception as e: 
-                    print(f"Errore Database (Segnale inviato comunque a TG): {e}")
+                except Exception as e: print(f"Errore DB: {e}")
 
-            # --- INVIO TELEGRAM ---
-            asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
-            msg = (f"{asset['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
+            # --- INVIO TELEGRAM OTTIMIZZATO ---
+            asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
+            tv_ticker = asset_info['tv']
+            tv_link = f"https://it.tradingview.com/chart/?symbol={tv_ticker}"
+
+            msg = (f"{asset_info['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
                    f"{info_indice}\n"
-                   f"<b>Asset:</b> {t}\n"
+                   f"<b>Asset:</b> <code>{t}</code> (TV: <b>{tv_ticker}</b>)\n"
                    f"<b>Azione:</b> <code>{d['azione']}</code>\n"
-                   f"<b>Fase:</b> {d['fase']}\n"
-                   f"<b>Prezzo Attuale:</b> {d['p']:.4f}\n\n"
+                   f"<b>Fase:</b> {d['fase']}\n\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
+                   f"🔗 <a href='{tv_link}'>Grafico TradingView</a>\n\n"
                    f"🛡️ <b>FILTRI:</b> RSI {d['rsi']:.1f} | Volumi OK")
 
             plot_data = d['df'].iloc[-50:]
-            ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3),
-                  mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
-            mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='plot.png', 
-                     hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
+            ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
+            mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='plot.png', hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
             
             with open('plot.png', 'rb') as f:
                 requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
