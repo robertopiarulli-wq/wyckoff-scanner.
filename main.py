@@ -17,7 +17,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 2.618 
 SOGLIA_NOTIFICA = 0.02
-SOGLIA_PANICO_INDICE = -1.25  # Filtro sicurezza: annulla segnali se l'indice crolla oltre il -1.25%
+SOGLIA_PANICO_INDICE = -1.25 
 
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
@@ -33,11 +33,8 @@ MAPPA_ASSET = {
 }
 
 CORRELAZIONI = {
-    "CSSPX.MI": "^GSPC", 
-    "ANX.MI": "^NDX", 
-    "SGLD.MI": "GC=F",
-    "SWDA.MI": "^GSPC",
-    "BTCE.DE": "BTC-USD"
+    "CSSPX.MI": "^GSPC", "ANX.MI": "^NDX", "SGLD.MI": "GC=F",
+    "SWDA.MI": "^GSPC", "BTCE.DE": "BTC-USD"
 }
 
 def calcola_indicatori(df):
@@ -72,17 +69,15 @@ def main():
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
             
-            # Usiamo .item() per evitare errori di ambiguità Pandas
             p = float(df['Close'].iloc[-1].item())
-            h_r, l_r = float(df['High'].rolling(137).max().iloc[-1].item()), float(df['Low'].rolling(137).min().iloc[-1].item())
+            h_r = float(df['High'].rolling(137).max().iloc[-1].item())
+            l_r = float(df['Low'].rolling(137).min().iloc[-1].item())
             
             range_h = h_r - l_r
             is_acc = p < (h_r + l_r) / 2
-            
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             
             rsi_val = float(df['RSI'].iloc[-1].item())
-            # --- FILTRO RSI OTTIMIZZATO ---
             if is_acc:
                 conf_rsi = (15 <= rsi_val <= 32)
                 rsi_target, azione = "15-32", "BUY LIMIT"
@@ -107,7 +102,6 @@ def main():
     for t, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
             
-            # --- FILTRO AUTOMATICO INDICE ---
             indice_ticker = CORRELAZIONI.get(t)
             idx_perf = 0.0
             info_indice = ""
@@ -122,17 +116,25 @@ def main():
                 except:
                     info_indice = "⚠️ Errore recupero indice rif.\n"
 
-            # Se l'indice crolla, scartiamo il segnale per sicurezza
             if idx_perf < SOGLIA_PANICO_INDICE:
                 print(f"DEBUG: Segnale su {t} scartato per crollo Indice ({idx_perf:.2f}%)")
                 continue
 
-            # --- SALVATAGGIO SU SUPABASE ---
+            # --- SALVATAGGIO SU SUPABASE (Sincronizzato con le tue colonne) ---
             if supabase:
                 try:
-                    data_db = {"ticker": t, "azione": d['azione'], "entry": float(d['lvl']), "tp": float(d['tp']), "sl": float(d['sl']), "prezzo_attuale": float(d['p'])}
+                    data_db = {
+                        "ticker": t,
+                        "fase": d['fase'],           # Caricato in 'fase'
+                        "stato": "In attesa",         # Caricato in 'stato'
+                        "prezzo_ingresso": float(d['lvl']), # Caricato in 'prezzo_ingresso'
+                        "tp": float(d['tp']),
+                        "sl": float(d['sl']),
+                        "distanza_minima_raggiunta": float(d['dist'])
+                    }
                     supabase.table("segnali_trading").insert(data_db).execute()
-                except Exception as e: print(f"Errore DB: {e}")
+                except Exception as e: 
+                    print(f"Errore Database (Segnale inviato comunque a TG): {e}")
 
             # --- INVIO TELEGRAM ---
             asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
@@ -140,13 +142,12 @@ def main():
                    f"{info_indice}\n"
                    f"<b>Asset:</b> {t}\n"
                    f"<b>Azione:</b> <code>{d['azione']}</code>\n"
-                   f"<b>Prezzo:</b> {d['p']:.4f}\n\n"
+                   f"<b>Fase:</b> {d['fase']}\n"
+                   f"<b>Prezzo Attuale:</b> {d['p']:.4f}\n\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
-                   f"🛡️ <b>FILTRI ATTIVI:</b>\n"
-                   f"✅ RSI ({d['rsi_target']}): {d['rsi']:.1f}\n"
-                   f"✅ Trend: Esaurimento Volumi")
+                   f"🛡️ <b>FILTRI:</b> RSI {d['rsi']:.1f} | Volumi OK")
 
             plot_data = d['df'].iloc[-50:]
             ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3),
