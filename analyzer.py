@@ -14,7 +14,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def analyze_performance():
     # Recupera i dati dalla tua tabella esistente
-    res = supabase.table("segnali_trading").select("*").order("created_at", descending=True).limit(10).execute()
+    res = supabase.table("segnali_trading").select("*").order("created_at", desc=True).limit(10).execute()
     signals = res.data
     
     if not signals:
