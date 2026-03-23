@@ -1,0 +1,29 @@
+name: Weekly Report Cecchino
+on:
+  schedule:
+    - cron: '0 21 * * 0' # Gira ogni Domenica alle 21:00 (ora UTC)
+  workflow_dispatch:      # Questo ti permette di lanciarlo a mano quando vuoi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v3
+
+      - name: Configurazione Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Installazione Librerie
+        run: |
+          pip install pandas yfinance supabase requests
+
+      - name: Esecuzione Analyzer
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python analyzer.py
