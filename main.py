@@ -17,7 +17,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 2.618 
 SOGLIA_NOTIFICA = 0.02
-SOGLIA_PANICO_INDICE = -1.25  # Filtro sicurezza: annulla segnali se l'indice crolla
+SOGLIA_PANICO_INDICE = -1.25  # Filtro sicurezza: annulla segnali se l'indice crolla oltre il -1.25%
 
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
@@ -71,14 +71,18 @@ def main():
             if df.empty or len(df) < 137: continue
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
-            p = df['Close'].iloc[-1]
-            h_r, l_r = df['High'].rolling(137).max().iloc[-1], df['Low'].rolling(137).min().iloc[-1]
+            
+            # Usiamo .item() per evitare errori di ambiguità Pandas
+            p = float(df['Close'].iloc[-1].item())
+            h_r, l_r = float(df['High'].rolling(137).max().iloc[-1].item()), float(df['Low'].rolling(137).min().iloc[-1].item())
+            
             range_h = h_r - l_r
             is_acc = p < (h_r + l_r) / 2
             
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             
-            rsi_val = df['RSI'].iloc[-1]
+            rsi_val = float(df['RSI'].iloc[-1].item())
+            # --- FILTRO RSI OTTIMIZZATO ---
             if is_acc:
                 conf_rsi = (15 <= rsi_val <= 32)
                 rsi_target, azione = "15-32", "BUY LIMIT"
@@ -96,27 +100,29 @@ def main():
                 "vol_status": vol_status, "conf_rsi": conf_rsi, "rsi_target": rsi_target,
                 "azione": azione, "df": df
             }
-        except: continue
+        except Exception as e:
+            print(f"Errore analisi {t}: {e}")
+            continue
 
     for t, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
             
             # --- FILTRO AUTOMATICO INDICE ---
             indice_ticker = CORRELAZIONI.get(t)
-            idx_perf = 0
+            idx_perf = 0.0
             info_indice = ""
             if indice_ticker:
                 try:
                     idx_df = yf.download(indice_ticker, period="1d", progress=False)
                     if not idx_df.empty:
-                        idx_now = idx_df['Close'].iloc[-1]
-                        idx_prev = idx_df['Open'].iloc[-1]
+                        idx_now = float(idx_df['Close'].iloc[-1].item())
+                        idx_prev = float(idx_df['Open'].iloc[-1].item())
                         idx_perf = ((idx_now / idx_prev) - 1) * 100
                         info_indice = f"📊 <b>INDICE REF ({indice_ticker}):</b> {idx_now:.2f} ({idx_perf:+.2f}%)\n"
                 except:
                     info_indice = "⚠️ Errore recupero indice rif.\n"
 
-            # Se l'indice crolla oltre la soglia, scartiamo il segnale
+            # Se l'indice crolla, scartiamo il segnale per sicurezza
             if idx_perf < SOGLIA_PANICO_INDICE:
                 print(f"DEBUG: Segnale su {t} scartato per crollo Indice ({idx_perf:.2f}%)")
                 continue
