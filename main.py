@@ -20,7 +20,7 @@ MOLTIPLICATORE_QUANTUM = 2.618
 SOGLIA_NOTIFICA = 0.02
 SOGLIA_PANICO_INDICE = -1.25 
 
-# MAPPA ASSET COMPLETA (Yahoo, TradingView, Directa)
+# --- MAPPA ASSET DEFINITIVA (Yahoo -> TradingView -> Directa) ---
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX", "dir": "CSSPX"},
     "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC", "dir": "ANX"},
