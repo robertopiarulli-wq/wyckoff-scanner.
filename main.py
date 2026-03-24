@@ -4,6 +4,7 @@ import os
 import mplfinance as mpf
 import pandas as pd
 import numpy as np
+import json
 from datetime import datetime
 from supabase import create_client
 
@@ -19,17 +20,18 @@ MOLTIPLICATORE_QUANTUM = 2.618
 SOGLIA_NOTIFICA = 0.02
 SOGLIA_PANICO_INDICE = -1.25 
 
+# MAPPA ASSET COMPLETA (Yahoo, TradingView, Directa)
 MAPPA_ASSET = {
-    "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
-    "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC"},
-    "^GDAXI": {"cat": "📈 INDICE DAX", "tv": "DAX"},
-    "FTSEMIB.MI": {"cat": "📈 INDICE MIB", "tv": "FTSEMIB"},
-    "GC=F": {"cat": "⛏️ METALS", "tv": "GOLD"},
-    "CSSPX.MI": {"cat": "🇮🇹 ETF USA", "tv": "MIL:CSSPX"},
-    "ANX.MI": {"cat": "🇮🇹 ETF TECH", "tv": "MIL:ANX"},
-    "SGLD.MI": {"cat": "⛏️ ETC ORO", "tv": "MIL:SGLD"},
-    "BTCE.DE": {"cat": "🌐 CRYPTO", "tv": "XETR:BTCE"},
-    "SWDA.MI": {"cat": "🌍 ETF WORLD", "tv": "MIL:SWDA"}
+    "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX", "dir": "CSSPX"},
+    "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC", "dir": "ANX"},
+    "^GDAXI": {"cat": "📈 INDICE DAX", "tv": "DAX", "dir": "DAX"},
+    "FTSEMIB.MI": {"cat": "📈 INDICE MIB", "tv": "FTSEMIB", "dir": "FIB"},
+    "GC=F": {"cat": "⛏️ METALS", "tv": "GOLD", "dir": "SGLD"},
+    "CSSPX.MI": {"cat": "🇮🇹 ETF USA", "tv": "MIL:CSSPX", "dir": "CSSPX"},
+    "ANX.MI": {"cat": "🇮🇹 ETF TECH", "tv": "MIL:ANX", "dir": "ANX"},
+    "SGLD.MI": {"cat": "⛏️ ETC ORO", "tv": "MIL:SGLD", "dir": "SGLD"},
+    "BTCE.DE": {"cat": "🌐 CRYPTO", "tv": "XETR:BTCE", "dir": "BTCE"},
+    "SWDA.MI": {"cat": "🌍 ETF WORLD", "tv": "MIL:SWDA", "dir": "SWDA"}
 }
 
 CORRELAZIONI = {
@@ -120,6 +122,7 @@ def main():
                 print(f"DEBUG: Segnale su {t} scartato per crollo Indice ({idx_perf:.2f}%)")
                 continue
 
+            # --- SALVATAGGIO SU SUPABASE PER AUTOMAZIONE MT5 ---
             if supabase:
                 try:
                     data_db = {
@@ -130,21 +133,34 @@ def main():
                     supabase.table("segnali_trading").insert(data_db).execute()
                 except Exception as e: print(f"Errore DB: {e}")
 
-            # --- INVIO TELEGRAM OTTIMIZZATO (I 3 FILTRI) ---
-            asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
+            # --- INVIO TELEGRAM CON TASTIERA INTERATTIVA ---
+            asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t, "dir": t})
             tv_ticker = asset_info['tv']
             tv_link = f"https://it.tradingview.com/chart/?symbol={tv_ticker}"
             check_idx = "✅" if idx_perf > SOGLIA_PANICO_INDICE else "⚠️"
 
+            # Creazione Pulsanti
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "📊 TradingView", "url": tv_link},
+                        {"text": "🏦 App Directa", "url": "https://www.directatrading.com/app/"}
+                    ],
+                    [
+                        {"text": "🤖 MT5: Ordine inviato", "callback_data": "none"}
+                    ]
+                ]
+            }
+
             msg = (f"{asset_info['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
                    f"{info_indice}\n"
                    f"<b>Asset:</b> <code>{t}</code> (TV: <b>{tv_ticker}</b>)\n"
+                   f"<b>Ticker Directa:</b> <code>{asset_info['dir']}</code>\n"
                    f"<b>Azione:</b> <code>{d['azione']}</code>\n"
                    f"<b>Fase:</b> {d['fase']}\n\n"
                    f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
                    f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
                    f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
-                   f"🔗 <a href='{tv_link}'>Grafico TradingView</a>\n\n"
                    f"🛡️ <b>FILTRI ATTIVI:</b>\n"
                    f"✅ <b>RSI ({d['rsi_target']}):</b> {d['rsi']:.1f}\n"
                    f"✅ <b>Volumi:</b> Esaurimento OK\n"
@@ -155,7 +171,16 @@ def main():
             mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='plot.png', hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
             
             with open('plot.png', 'rb') as f:
-                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
+                requests.post(
+                    f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
+                    files={'photo': f}, 
+                    data={
+                        'chat_id': CHAT_ID, 
+                        'caption': msg, 
+                        'parse_mode': 'HTML',
+                        'reply_markup': json.dumps(keyboard)
+                    }
+                )
 
 if __name__ == "__main__":
     main()
