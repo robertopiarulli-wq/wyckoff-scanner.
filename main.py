@@ -15,7 +15,7 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 
-# --- PARAMETRI STRATEGIA (MAGLIE LARGHE PER PIÙ AZIONE) ---
+# --- PARAMETRI STRATEGIA (MASSIMA AZIONE) ---
 ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 1.618  
 SOGLIA_NOTIFICA = 0.05          
@@ -159,14 +159,19 @@ def main():
 
             if idx_perf < SOGLIA_PANICO_INDICE: continue
 
+            # --- LOGICA SUPABASE ANTI-DOPPIONE ---
             if supabase:
                 try:
                     t_clean = t.replace('^', '').split('.')[0]
-                    supabase.table("segnali_trading").insert({
-                        "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
-                        "prezzo_ingresso": round(d['lvl'], 5), "tp": round(d['tp'], 5), 
-                        "sl": round(d['sl'], 5), "distanza_minima_raggiunta": round(d['dist'], 5)
-                    }).execute()
+                    # Controlla se esiste già un ordine pendente
+                    check = supabase.table("segnali_trading").select("id").eq("ticker", t_clean).eq("stato", "Pendente").execute()
+                    
+                    if not check.data:
+                        supabase.table("segnali_trading").insert({
+                            "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
+                            "prezzo_ingresso": round(d['lvl'], 5), "tp": round(d['tp'], 5), 
+                            "sl": round(d['sl'], 5), "distanza_minima_raggiunta": round(d['dist'], 5)
+                        }).execute()
                 except: pass
 
             asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t, "dir": t})
