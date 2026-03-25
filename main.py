@@ -15,16 +15,15 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 
-# --- PARAMETRI STRATEGIA (CALIBRATI PER PIÙ ALERT) ---
+# --- PARAMETRI STRATEGIA (MAGLIE LARGHE PER PIÙ AZIONE) ---
 ALPHA = 0.00729735
-MOLTIPLICATORE_QUANTUM = 1.618  # Più aggressivo (era 2.618)
-SOGLIA_NOTIFICA = 0.05          # Allerta al 5% di distanza (era 0.02)
-SOGLIA_PANICO_INDICE = -1.50    # Più tolleranza sul mercato (era -1.25)
+MOLTIPLICATORE_QUANTUM = 1.618  
+SOGLIA_NOTIFICA = 0.05          
+SOGLIA_PANICO_INDICE = -1.50    
 
-# Memoria per anti-spam (1 messaggio per ora per asset)
 sent_alerts = {}
 
-# --- MAPPA ASSET COMPLETA (Yahoo -> TradingView -> Directa/MT5) ---
+# --- MAPPA ASSET COMPLETA ---
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX", "dir": "CSSPX"},
     "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC", "dir": "ANX"},
@@ -95,15 +94,19 @@ def calcola_indicatori(df):
     return df
 
 def main():
-    if datetime.now().weekday() > 4: return
+    is_weekend = datetime.now().weekday() > 4
 
     try:
         symbols = [line.strip() for line in open('tickers.txt', 'r') if line.strip() and not line.startswith('#')]
-        print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset in corso...")
+        print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset...")
     except: return
     
     cache = {}
     for t in symbols:
+        is_crypto = "-USD" in t
+        if is_weekend and not is_crypto:
+            continue
+
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 50: continue
@@ -120,10 +123,10 @@ def main():
             
             rsi_val = float(df['RSI'].iloc[-1])
             if is_acc:
-                conf_rsi = (10 <= rsi_val <= 42) # Range allargato
+                conf_rsi = (10 <= rsi_val <= 42)
                 rsi_target, azione = "10-42", "BUY LIMIT"
             else:
-                conf_rsi = (58 <= rsi_val <= 90) # Range allargato
+                conf_rsi = (58 <= rsi_val <= 90)
                 rsi_target, azione = "58-90", "SELL LIMIT"
             
             vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.6)
@@ -140,8 +143,6 @@ def main():
 
     for t, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
-            
-            # Anti-Spam (1 msg per ora)
             alert_id = f"{t}_{d['azione']}_{datetime.now().strftime('%Y%m%d_%H')}"
             if alert_id in sent_alerts: continue
 
