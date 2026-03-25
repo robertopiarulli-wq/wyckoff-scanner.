@@ -15,11 +15,14 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 
-# Parametri Strategia (Quantum Alpha)
+# --- PARAMETRI STRATEGIA (CALIBRATI PER PIÙ ALERT) ---
 ALPHA = 0.00729735
-MOLTIPLICATORE_QUANTUM = 2.618 
-SOGLIA_NOTIFICA = 0.02
-SOGLIA_PANICO_INDICE = -1.25 
+MOLTIPLICATORE_QUANTUM = 1.618  # Più aggressivo (era 2.618)
+SOGLIA_NOTIFICA = 0.05          # Allerta al 5% di distanza (era 0.02)
+SOGLIA_PANICO_INDICE = -1.50    # Più tolleranza sul mercato (era -1.25)
+
+# Memoria per anti-spam (1 messaggio per ora per asset)
+sent_alerts = {}
 
 # --- MAPPA ASSET COMPLETA (Yahoo -> TradingView -> Directa/MT5) ---
 MAPPA_ASSET = {
@@ -27,28 +30,53 @@ MAPPA_ASSET = {
     "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC", "dir": "ANX"},
     "^GDAXI": {"cat": "📈 INDICE DAX", "tv": "GER40", "dir": "DAX"},
     "FTSEMIB.MI": {"cat": "📈 INDICE MIB", "tv": "FTSEMIB", "dir": "FIB"},
-    "GC=F": {"cat": "⛏️ METALS (ORO)", "tv": "GOLD", "dir": "SGLD"},
-    "SI=F": {"cat": "⛏️ METALS (ARGENTO)", "tv": "SILVER", "dir": "PHAG"},
-    "CL=F": {"cat": "🛢️ ENERGY (OIL)", "tv": "USOIL", "dir": "CRUD"},
-    "NG=F": {"cat": "🔥 ENERGY (GAS)", "tv": "NATGAS", "dir": "NG"},
-    "KC=F": {"cat": "☕ SOFT (CAFFÈ)", "tv": "KC1!", "dir": "KC"},
-    "SB=F": {"cat": "🍭 SOFT (ZUCCHERO)", "tv": "SB1!", "dir": "SB"},
     "CSSPX.MI": {"cat": "🇮🇹 ETF S&P500", "tv": "MIL:CSSPX", "dir": "CSSPX"},
     "ANX.MI": {"cat": "🇮🇹 ETF NASDAQ", "tv": "MIL:ANX", "dir": "ANX"},
-    "SGLD.MI": {"cat": "⛏️ ETC ORO", "tv": "MIL:SGLD", "dir": "SGLD"},
-    "PHAG.MI": {"cat": "⛏️ ETC ARGENTO", "tv": "MIL:PHAG", "dir": "PHAG"},
-    "CRUD.MI": {"cat": "🛢️ ETC PETROLIO", "tv": "MIL:CRUD", "dir": "CRUD"},
     "SWDA.MI": {"cat": "🌍 ETF WORLD", "tv": "MIL:SWDA", "dir": "SWDA"},
-    "BTCE.DE": {"cat": "🌐 CRYPTO (BTC)", "tv": "XETR:BTCE", "dir": "BTCE"},
+    "AAPL": {"cat": "🍎 TECH (APPLE)", "tv": "AAPL", "dir": "AAPL"},
+    "NVDA": {"cat": "🤖 TECH (NVIDIA)", "tv": "NVDA", "dir": "NVDA"},
+    "TSLA": {"cat": "⚡ TECH (TESLA)", "tv": "TSLA", "dir": "TSLA"},
+    "AMZN": {"cat": "📦 TECH (AMAZON)", "tv": "AMZN", "dir": "AMZN"},
+    "META": {"cat": "📱 TECH (META)", "tv": "META", "dir": "META"},
+    "MSFT": {"cat": "💻 TECH (MICROSOFT)", "tv": "MSFT", "dir": "MSFT"},
+    "GOOGL": {"cat": "🔍 TECH (GOOGLE)", "tv": "GOOGL", "dir": "GOOGL"},
+    "AVGO": {"cat": "🔌 TECH (BROADCOM)", "tv": "AVGO", "dir": "AVGO"},
+    "ASML": {"cat": "🔬 TECH (ASML)", "tv": "ASML", "dir": "ASML"},
+    "XLF": {"cat": "🏦 SECTOR (FINANCE)", "tv": "XLF", "dir": "XLF"},
+    "XLE": {"cat": "🛢️ SECTOR (ENERGY)", "tv": "XLE", "dir": "XLE"},
+    "XLV": {"cat": "💊 SECTOR (HEALTH)", "tv": "XLV", "dir": "XLV"},
+    "SMH": {"cat": "💾 SECTOR (CHIPS)", "tv": "SMH", "dir": "SMH"},
+    "IWM": {"cat": "🚜 SMALL CAPS", "tv": "IWM", "dir": "IWM"},
+    "QQQ": {"cat": "📊 NASDAQ 100 ETF", "tv": "QQQ", "dir": "QQQ"},
+    "GC=F": {"cat": "⛏️ METALS (GOLD)", "tv": "GOLD", "dir": "SGLD"},
+    "SI=F": {"cat": "⛏️ METALS (SILVER)", "tv": "SILVER", "dir": "PHAG"},
+    "CL=F": {"cat": "🛢️ ENERGY (OIL)", "tv": "USOIL", "dir": "CRUD"},
+    "NG=F": {"cat": "🔥 ENERGY (GAS)", "tv": "NATGAS", "dir": "NG"},
+    "KC=F": {"cat": "☕ SOFT (COFFEE)", "tv": "KC1!", "dir": "KC"},
+    "SB=F": {"cat": "🍭 SOFT (SUGAR)", "tv": "SB1!", "dir": "SB"},
+    "HG=F": {"cat": "🏗️ METALS (COPPER)", "tv": "COPPER", "dir": "HG"},
+    "BTC-USD": {"cat": "🌐 CRYPTO (BTC)", "tv": "BTCUSD", "dir": "BTC"},
     "ETH-USD": {"cat": "🌐 CRYPTO (ETH)", "tv": "ETHUSD", "dir": "ETH"},
+    "SOL-USD": {"cat": "🌐 CRYPTO (SOL)", "tv": "SOLUSD", "dir": "SOL"},
+    "ADA-USD": {"cat": "🌐 CRYPTO (ADA)", "tv": "ADAUSD", "dir": "ADA"},
+    "DOT-USD": {"cat": "🌐 CRYPTO (DOT)", "tv": "DOTUSD", "dir": "DOT"},
+    "AVAX-USD": {"cat": "🌐 CRYPTO (AVAX)", "tv": "AVAXUSD", "dir": "AVAX"},
+    "LINK-USD": {"cat": "🌐 CRYPTO (LINK)", "tv": "LINKUSD", "dir": "LINK"},
+    "XRP-USD": {"cat": "🌐 CRYPTO (XRP)", "tv": "XRPUSD", "dir": "XRP"},
+    "KO": {"cat": "🥤 VALUE (COCA COLA)", "tv": "KO", "dir": "KO"},
+    "PEP": {"cat": "🍿 VALUE (PEPSICO)", "tv": "PEP", "dir": "PEP"},
+    "PG": {"cat": "🧼 VALUE (P&G)", "tv": "PG", "dir": "PG"},
+    "JNJ": {"cat": "🩺 VALUE (J&J)", "tv": "JNJ", "dir": "JNJ"},
     "EURUSD=X": {"cat": "💱 FOREX (EUR/USD)", "tv": "EURUSD", "dir": "EURUSD"},
     "GBPUSD=X": {"cat": "💱 FOREX (GBP/USD)", "tv": "GBPUSD", "dir": "GBPUSD"}
 }
 
 CORRELAZIONI = {
     "CSSPX.MI": "^GSPC", "ANX.MI": "^NDX", "SWDA.MI": "^GSPC", 
-    "ETFMIB.MI": "FTSEMIB.MI", "SGLD.MI": "GC=F", "PHAG.MI": "GC=F", 
-    "CRUD.MI": "CL=F", "BTCE.DE": "BTC-USD", "ETH-USD": "BTC-USD"
+    "AAPL": "^NDX", "NVDA": "^NDX", "TSLA": "^NDX", "AMZN": "^NDX",
+    "META": "^NDX", "MSFT": "^NDX", "GOOGL": "^NDX", "SMH": "^NDX",
+    "SGLD.MI": "GC=F", "PHAG.MI": "SI=F", "CRUD.MI": "CL=F",
+    "ETH-USD": "BTC-USD", "SOL-USD": "BTC-USD", "ADA-USD": "BTC-USD"
 }
 
 def calcola_indicatori(df):
@@ -67,40 +95,38 @@ def calcola_indicatori(df):
     return df
 
 def main():
-    if datetime.now().weekday() > 4:
-        print("Weekend: Cecchino a riposo.")
-        return
+    if datetime.now().weekday() > 4: return
 
     try:
         symbols = [line.strip() for line in open('tickers.txt', 'r') if line.strip() and not line.startswith('#')]
-        print(f"🚀 AVVIO: Scansione di {len(symbols)} asset in corso...")
+        print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset in corso...")
     except: return
     
     cache = {}
     for t in symbols:
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
-            if df.empty or len(df) < 137: continue
+            if df.empty or len(df) < 50: continue
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
             
             p = float(df['Close'].iloc[-1].item())
-            h_r = float(df['High'].rolling(137).max().iloc[-1].item())
-            l_r = float(df['Low'].rolling(137).min().iloc[-1].item())
+            h_r = float(df['High'].rolling(100).max().iloc[-1])
+            l_r = float(df['Low'].rolling(100).min().iloc[-1])
             range_h = h_r - l_r
             
             is_acc = p < (h_r + l_r) / 2
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             
-            rsi_val = float(df['RSI'].iloc[-1].item())
+            rsi_val = float(df['RSI'].iloc[-1])
             if is_acc:
-                conf_rsi = (15 <= rsi_val <= 32)
-                rsi_target, azione = "15-32", "BUY LIMIT"
+                conf_rsi = (10 <= rsi_val <= 42) # Range allargato
+                rsi_target, azione = "10-42", "BUY LIMIT"
             else:
-                conf_rsi = (68 <= rsi_val <= 85)
-                rsi_target, azione = "68-85", "SELL LIMIT"
+                conf_rsi = (58 <= rsi_val <= 90) # Range allargato
+                rsi_target, azione = "58-90", "SELL LIMIT"
             
-            vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.1)
+            vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.6)
 
             cache[t] = {
                 "p": p, "rsi": rsi_val, "dist": abs(p - lvl)/lvl, "lvl": lvl,
@@ -110,30 +136,31 @@ def main():
                 "vol_status": vol_status, "conf_rsi": conf_rsi, "rsi_target": rsi_target,
                 "azione": azione, "df": df
             }
-        except Exception as e:
-            print(f"Errore {t}: {e}")
-            continue
+        except: continue
 
     for t, d in cache.items():
         if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
             
+            # Anti-Spam (1 msg per ora)
+            alert_id = f"{t}_{d['azione']}_{datetime.now().strftime('%Y%m%d_%H')}"
+            if alert_id in sent_alerts: continue
+
             indice_ticker = CORRELAZIONI.get(t)
             idx_perf = 0.0
             info_indice = ""
             if indice_ticker:
                 try:
                     idx_df = yf.download(indice_ticker, period="1d", progress=False)
-                    idx_now, idx_prev = float(idx_df['Close'].iloc[-1].item()), float(idx_df['Open'].iloc[-1].item())
+                    idx_now, idx_prev = float(idx_df['Close'].iloc[-1]), float(idx_df['Open'].iloc[-1])
                     idx_perf = ((idx_now / idx_prev) - 1) * 100
                     info_indice = f"📊 <b>INDICE REF ({indice_ticker}):</b> {idx_now:.2f} ({idx_perf:+.2f}%)\n"
                 except: info_indice = "⚠️ Errore indice rif.\n"
 
             if idx_perf < SOGLIA_PANICO_INDICE: continue
 
-            # --- SUPABASE ---
             if supabase:
                 try:
-                    t_clean = t.replace('^', '').split('.')[0].replace('=X', '')
+                    t_clean = t.replace('^', '').split('.')[0]
                     supabase.table("segnali_trading").insert({
                         "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
                         "prezzo_ingresso": round(d['lvl'], 5), "tp": round(d['tp'], 5), 
@@ -141,7 +168,6 @@ def main():
                     }).execute()
                 except: pass
 
-            # --- TELEGRAM ---
             asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t, "dir": t})
             tv_link = f"https://it.tradingview.com/chart/?symbol={asset_info['tv']}"
             check_idx = "✅" if (not indice_ticker or idx_perf > SOGLIA_PANICO_INDICE) else "⚠️"
@@ -162,12 +188,14 @@ def main():
 
             plot_data = d['df'].iloc[-50:]
             ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
-            mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='plot.png', 
+            mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='p.png', 
                      hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
             
-            with open('plot.png', 'rb') as f:
+            with open('p.png', 'rb') as f:
                 requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
                               files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
+            
+            sent_alerts[alert_id] = True
 
 if __name__ == "__main__":
     main()
