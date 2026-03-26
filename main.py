@@ -159,14 +159,19 @@ def main():
 
             if idx_perf < SOGLIA_PANICO_INDICE: continue
 
-            # --- LOGICA SUPABASE ANTI-DOPPIONE ---
+            # --- NUOVA LOGICA: DISTINZIONE NUOVO ALERT / RE-UPDATE ---
+            is_new_alert = True
             if supabase:
                 try:
                     t_clean = t.replace('^', '').split('.')[0]
-                    # Controlla se esiste già un ordine pendente
+                    # Controlla se l'asset è già "Pendente" nel database
                     check = supabase.table("segnali_trading").select("id").eq("ticker", t_clean).eq("stato", "Pendente").execute()
                     
-                    if not check.data:
+                    if check.data:
+                        # Se esiste già, marchiamo come RE-UPDATE e NON inseriamo nel DB (anti-doppione)
+                        is_new_alert = False
+                    else:
+                        # Se NON esiste, è un NUOVO ALERT e lo inseriamo
                         supabase.table("segnali_trading").insert({
                             "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
                             "prezzo_ingresso": round(d['lvl'], 5), "tp": round(d['tp'], 5), 
@@ -174,11 +179,13 @@ def main():
                         }).execute()
                 except: pass
 
+            header = "🆕 <b>NUOVO ALERT</b>" if is_new_alert else "🔄 <b>RE-UPDATE ALERT</b>"
             asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t, "dir": t})
             tv_link = f"https://it.tradingview.com/chart/?symbol={asset_info['tv']}"
             check_idx = "✅" if (not indice_ticker or idx_perf > SOGLIA_PANICO_INDICE) else "⚠️"
 
-            msg = (f"{asset_info['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
+            msg = (f"{header}\n"
+                   f"{asset_info['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
                    f"{info_indice}\n"
                    f"<b>Asset:</b> <code>{t}</code> (TV: <b>{asset_info['tv']}</b>)\n"
                    f"<b>Azione:</b> <code>{d['azione']}</code>\n"
