@@ -15,7 +15,7 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 
-# --- PARAMETRI STRATEGIA (MASSIMA AZIONE) ---
+# --- PARAMETRI STRATEGIA ---
 ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 1.618  
 SOGLIA_NOTIFICA = 0.05          
@@ -95,17 +95,18 @@ def calcola_indicatori(df):
 
 def main():
     is_weekend = datetime.now().weekday() > 4
-
     try:
         symbols = [line.strip() for line in open('tickers.txt', 'r') if line.strip() and not line.startswith('#')]
         print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset...")
     except: return
     
-    cache = {}
+    lista_nuovi = []
+    lista_update = []
+    lista_cancella = []
+
     for t in symbols:
         is_crypto = "-USD" in t
-        if is_weekend and not is_crypto:
-            continue
+        if is_weekend and not is_crypto: continue
 
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
@@ -117,98 +118,78 @@ def main():
             h_r = float(df['High'].rolling(100).max().iloc[-1])
             l_r = float(df['Low'].rolling(100).min().iloc[-1])
             range_h = h_r - l_r
-            
             is_acc = p < (h_r + l_r) / 2
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
+            dist = abs(p - lvl)/lvl
             
             rsi_val = float(df['RSI'].iloc[-1])
-            if is_acc:
-                conf_rsi = (10 <= rsi_val <= 42)
-                rsi_target, azione = "10-42", "BUY LIMIT"
-            else:
-                conf_rsi = (58 <= rsi_val <= 90)
-                rsi_target, azione = "58-90", "SELL LIMIT"
-            
+            conf_rsi = (10 <= rsi_val <= 42) if is_acc else (58 <= rsi_val <= 90)
             vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.6)
 
-            cache[t] = {
-                "p": p, "rsi": rsi_val, "dist": abs(p - lvl)/lvl, "lvl": lvl,
+            d = {
+                "t": t, "p": p, "rsi": rsi_val, "dist": dist, "lvl": lvl,
                 "tp": lvl + (range_h * 0.85) if is_acc else lvl - (range_h * 0.85),
                 "sl": lvl - (df['ATR'].iloc[-1] * 2.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 2.5),
                 "fase": "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE", 
-                "vol_status": vol_status, "conf_rsi": conf_rsi, "rsi_target": rsi_target,
-                "azione": azione, "df": df
+                "azione": "BUY LIMIT" if is_acc else "SELL LIMIT", "df": df,
+                "rsi_target": "10-42" if is_acc else "58-90"
             }
+
+            t_clean = t.replace('^', '').split('.')[0]
+            check_db = supabase.table("segnali_trading").select("id").eq("ticker", t_clean).eq("stato", "Pendente").execute() if supabase else None
+            gia_pendente = bool(check_db and check_db.data)
+
+            # SMISTAMENTO ORDINATO
+            if dist < SOGLIA_NOTIFICA and conf_rsi and vol_status:
+                if not gia_pendente:
+                    lista_nuovi.append(d)
+                    if supabase: supabase.table("segnali_trading").insert({
+                        "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
+                        "prezzo_ingresso": round(lvl, 5), "tp": round(d['tp'], 5), "sl": round(d['sl'], 5),
+                        "distanza_minima_raggiunta": round(dist, 5)
+                    }).execute()
+                else:
+                    lista_update.append(d)
+            elif gia_pendente and dist > (SOGLIA_NOTIFICA * 1.5):
+                lista_cancella.append(d)
+                if supabase: supabase.table("segnali_trading").update({"stato": "Annullato"}).eq("ticker", t_clean).eq("stato", "Pendente").execute()
+
         except: continue
 
-    for t, d in cache.items():
-        if d['dist'] < SOGLIA_NOTIFICA and d['conf_rsi'] and d['vol_status']:
-            alert_id = f"{t}_{d['azione']}_{datetime.now().strftime('%Y%m%d_%H')}"
-            if alert_id in sent_alerts: continue
+    # FUNZIONE INVIO TELEGRAM MIGLIORATA
+    def invia_telegram(d, header, show_filters=True):
+        asset_info = MAPPA_ASSET.get(d['t'], {"cat": "📊 ASSET", "tv": d['t']})
+        tv_link = f"https://it.tradingview.com/chart/?symbol={asset_info['tv']}"
+        
+        msg = (f"{header}\n"
+               f"{asset_info['cat']} | <b>{d['azione']}</b>\n"
+               f"----------------------------------\n"
+               f"<b>Asset:</b> <code>{d['t']}</code>\n"
+               f"<b>Fase:</b> {d['fase']}\n\n"
+               f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
+               f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
+               f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n")
+        
+        if show_filters:
+            msg += (f"🛡️ <b>STATUS:</b>\n"
+                    f"✅ RSI ({d['rsi_target']}): {d['rsi']:.1f}\n"
+                    f"✅ Volumi: OK\n\n")
+        
+        msg += f"🔗 <a href='{tv_link}'>TradingView</a>"
 
-            indice_ticker = CORRELAZIONI.get(t)
-            idx_perf = 0.0
-            info_indice = ""
-            if indice_ticker:
-                try:
-                    idx_df = yf.download(indice_ticker, period="1d", progress=False)
-                    idx_now, idx_prev = float(idx_df['Close'].iloc[-1]), float(idx_df['Open'].iloc[-1])
-                    idx_perf = ((idx_now / idx_prev) - 1) * 100
-                    info_indice = f"📊 <b>INDICE REF ({indice_ticker}):</b> {idx_now:.2f} ({idx_perf:+.2f}%)\n"
-                except: info_indice = "⚠️ Errore indice rif.\n"
+        plot_data = d['df'].iloc[-50:]
+        ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
+        mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='p.png', 
+                 hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
+        
+        with open('p.png', 'rb') as f:
+            requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
+                          files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
 
-            if idx_perf < SOGLIA_PANICO_INDICE: continue
-
-            # --- NUOVA LOGICA: DISTINZIONE NUOVO ALERT / RE-UPDATE ---
-            is_new_alert = True
-            if supabase:
-                try:
-                    t_clean = t.replace('^', '').split('.')[0]
-                    # Controlla se l'asset è già "Pendente" nel database
-                    check = supabase.table("segnali_trading").select("id").eq("ticker", t_clean).eq("stato", "Pendente").execute()
-                    
-                    if check.data:
-                        # Se esiste già, marchiamo come RE-UPDATE e NON inseriamo nel DB (anti-doppione)
-                        is_new_alert = False
-                    else:
-                        # Se NON esiste, è un NUOVO ALERT e lo inseriamo
-                        supabase.table("segnali_trading").insert({
-                            "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
-                            "prezzo_ingresso": round(d['lvl'], 5), "tp": round(d['tp'], 5), 
-                            "sl": round(d['sl'], 5), "distanza_minima_raggiunta": round(d['dist'], 5)
-                        }).execute()
-                except: pass
-
-            header = "🆕 <b>NUOVO ALERT</b>" if is_new_alert else "🔄 <b>RE-UPDATE ALERT</b>"
-            asset_info = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t, "dir": t})
-            tv_link = f"https://it.tradingview.com/chart/?symbol={asset_info['tv']}"
-            check_idx = "✅" if (not indice_ticker or idx_perf > SOGLIA_PANICO_INDICE) else "⚠️"
-
-            msg = (f"{header}\n"
-                   f"{asset_info['cat']} | 🎯 <b>SEGNALE GOLD</b>\n"
-                   f"{info_indice}\n"
-                   f"<b>Asset:</b> <code>{t}</code> (TV: <b>{asset_info['tv']}</b>)\n"
-                   f"<b>Azione:</b> <code>{d['azione']}</code>\n"
-                   f"<b>Fase:</b> {d['fase']}\n\n"
-                   f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
-                   f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
-                   f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n"
-                   f"🛡️ <b>FILTRI ATTIVI:</b>\n"
-                   f"✅ <b>RSI ({d['rsi_target']}):</b> {d['rsi']:.1f}\n"
-                   f"✅ <b>Volumi:</b> Esaurimento OK\n"
-                   f"{check_idx} <b>Sentiment Indice:</b> Stabile\n\n"
-                   f"🔗 <a href='{tv_link}'>TradingView</a> | <a href='https://www.directatrading.com/app/'>Directa</a>")
-
-            plot_data = d['df'].iloc[-50:]
-            ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
-            mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='p.png', 
-                     hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
-            
-            with open('p.png', 'rb') as f:
-                requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
-                              files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
-            
-            sent_alerts[alert_id] = True
+    # INVIO IN ORDINE DI PRIORITÀ
+    for d in lista_nuovi: invia_telegram(d, "🆕 <b>NUOVO ALERT</b>")
+    for d in lista_update: invia_telegram(d, "🔄 <b>RE-UPDATE ALERT</b>")
+    for d in lista_cancella: invia_telegram(d, "⚠️ <b>CANCELLA ORDINE (LONTANO)</b>", show_filters=False)
 
 if __name__ == "__main__":
     main()
