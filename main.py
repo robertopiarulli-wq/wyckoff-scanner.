@@ -95,7 +95,6 @@ def calcola_indicatori(df):
 
 def main():
     is_weekend = datetime.now().weekday() > 4
-    cambiamenti = false
     try:
         symbols = [line.strip() for line in open('tickers.txt', 'r') if line.strip() and not line.startswith('#')]
         print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset...")
