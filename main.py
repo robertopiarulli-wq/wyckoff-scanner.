@@ -139,30 +139,38 @@ def main():
             check_db = supabase.table("segnali_trading").select("id").eq("ticker", t_clean).eq("stato", "Pendente").execute() if supabase else None
             gia_pendente = bool(check_db and check_db.data)
 
-            # SMISTAMENTO ORDINATO
+            # --- NUOVA LOGICA DI SMISTAMENTO (Sostituisce il vecchio blocco) ---
             if dist < SOGLIA_NOTIFICA and conf_rsi and vol_status:
                 if not gia_pendente:
                     lista_nuovi.append(d)
-                    if supabase: supabase.table("segnali_trading").insert({
-                        "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
-                        "prezzo_ingresso": round(lvl, 5), "tp": round(d['tp'], 5), "sl": round(d['sl'], 5),
-                        "distanza_minima_raggiunta": round(dist, 5)
-                    }).execute()
-                else:
-                    lista_update.append(d)
-            elif gia_pendente and dist > (SOGLIA_NOTIFICA * 1.5):
-                lista_cancella.append(d)
-                if supabase: supabase.table("segnali_trading").update({"stato": "Annullato"}).eq("ticker", t_clean).eq("stato", "Pendente").execute()
-
+                    if supabase: 
+                        supabase.table("segnali_trading").insert({
+                            "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
+                            "prezzo_ingresso": round(lvl, 5), "tp": round(d['tp'], 5), "sl": round(d['sl'], 5)
+                        }).execute()
+                    cambiamenti = True
+                # NOTA: Qui il Re-update è stato eliminato (non facciamo nulla se è già pendente e i filtri sono OK)
+            
+            elif gia_pendente:
+                # Recuperiamo i dati dal DB per il controllo inversione
+                info_db = check_db.data[0]
+                # CHIUDI SE: La fase è cambiata (Inversione) O il prezzo è troppo lontano
+                if info_db.get('fase') != fase_attuale or dist > (SOGLIA_NOTIFICA * 1.5):
+                    d['motivo'] = "Inversione Fase" if info_db.get('fase') != fase_attuale else "Prezzo Lontano"
+                    lista_cancella.append(d)
+                    if supabase: 
+                        supabase.table("segnali_trading").update({"stato": "Annullato"}).eq("ticker", t_clean).execute()
+                    cambiamenti = True
         except: continue
 
     # FUNZIONE INVIO TELEGRAM MIGLIORATA
     def invia_telegram(d, header, show_filters=True):
         asset_info = MAPPA_ASSET.get(d['t'], {"cat": "📊 ASSET", "tv": d['t']})
         tv_link = f"https://it.tradingview.com/chart/?symbol={asset_info['tv']}"
+        directa_link = "https://www.directatrading.com/app/" # Aggiunto Link Directa
         
         msg = (f"{header}\n"
-               f"{asset_info['cat']} | <b>{d['azione']}</b>\n"
+               f"{asset_info['cat']} | 🎯 <b>{d['azione']}</b>\n"
                f"----------------------------------\n"
                f"<b>Asset:</b> <code>{d['t']}</code>\n"
                f"<b>Fase:</b> {d['fase']}\n\n"
@@ -172,10 +180,13 @@ def main():
         
         if show_filters:
             msg += (f"🛡️ <b>STATUS:</b>\n"
-                    f"✅ RSI ({d['rsi_target']}): {d['rsi']:.1f}\n"
+                    f"✅ RSI: {d['rsi']:.1f}\n"
                     f"✅ Volumi: OK\n\n")
+        elif 'motivo' in d: # Aggiunta gestione motivo chiusura
+            msg += f"❗ <b>MOTIVO:</b> {d['motivo']}\n\n"
         
-        msg += f"🔗 <a href='{tv_link}'>TradingView</a>"
+        msg += f"🔗 <a href='{tv_link}'>TradingView</a> | <a href='{directa_link}'>Directa</a>"
+        # ... resto del codice del grafico (invariato)
 
         plot_data = d['df'].iloc[-50:]
         ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
@@ -186,10 +197,33 @@ def main():
             requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
                           files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
 
-    # INVIO IN ORDINE DI PRIORITÀ
+   # Invio alert singoli
     for d in lista_nuovi: invia_telegram(d, "🆕 <b>NUOVO ALERT</b>")
-    for d in lista_update: invia_telegram(d, "🔄 <b>RE-UPDATE ALERT</b>")
-    for d in lista_cancella: invia_telegram(d, "⚠️ <b>CANCELLA ORDINE (LONTANO)</b>", show_filters=False)
+    for d in lista_cancella: invia_telegram(d, "⚠️ <b>ORDINE CHIUSO</b>", show_filters=False)
 
+    # REPORT POSIZIONI (Solo se ci sono stati cambiamenti)
+    if cambiamenti and supabase:
+        res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
+        limit_txt, live_txt = [], []
+        
+        for p in res.data:
+            t_orig = next((k for k in MAPPA_ASSET if k.replace('^','').split('.')[0] == p['ticker']), p['ticker'])
+            last_df = yf.download(t_orig, period="1d", progress=False)
+            last_p = last_df['Close'].iloc[-1].item()
+            link = f"<a href='https://it.tradingview.com/chart/?symbol={MAPPA_ASSET.get(t_orig, {'tv': p['ticker']})['tv']}'>📈</a>"
+            linea = f"{link} <code>{p['ticker']}</code> @ {p['prezzo_ingresso']}"
+            
+            # Controllo se l'ordine è LIVE (prezzo ha toccato o superato l'entry)
+            if (p['fase'] == "ACCUMULAZIONE" and last_p <= p['prezzo_ingresso']) or \
+               (p['fase'] == "DISTRIBUZIONE" and last_p >= p['prezzo_ingresso']):
+                live_txt.append(linea)
+            else:
+                limit_txt.append(linea)
+
+        report = "📊 <b>REPORT POSIZIONI ATTIVE</b>\n\n⏳ <b>LIMIT:</b>\n" + ("\n".join(limit_txt) if limit_txt else "Nessuna")
+        report += "\n\n🚀 <b>LIVE:</b>\n" + ("\n".join(live_txt) if live_txt else "Nessuna")
+        
+        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                      data={'chat_id': CHAT_ID, 'text': report, 'parse_mode': 'HTML', 'disable_web_page_preview': True})
 if __name__ == "__main__":
     main()
