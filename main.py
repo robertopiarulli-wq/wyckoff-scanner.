@@ -165,7 +165,7 @@ def main():
     for d in lista_nuovi: invia_telegram(d, "🆕 <b>NUOVO ALERT</b>")
     for d in lista_cancella: invia_telegram(d, "⚠️ <b>ORDINE CHIUSO</b>", False)
 
-    if true and supabase:
+    if True and supabase:
         res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
         limit_txt, live_txt = [], []
         for p in res.data:
