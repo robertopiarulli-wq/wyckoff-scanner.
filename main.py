@@ -4,7 +4,6 @@ import os
 import mplfinance as mpf
 import pandas as pd
 import numpy as np
-import json
 from datetime import datetime
 from supabase import create_client
 
@@ -15,14 +14,13 @@ SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 
-# --- PARAMETRI RICALIBRATI (RITARDO ENTRY E ABBASSIAMO TP) ---
+# --- PARAMETRI STRATEGIA ---
 ALPHA = 0.00729735
-MOLTIPLICATORE_QUANTUM = 1.200  # Entry più profonda e conservativa
-SOGLIA_NOTIFICA = 0.04          # Notifica al 4% di distanza
-TP_ADJUSTER = 0.60              # TP più vicino per chiudere prima
-SOGLIA_PANICO_INDICE = -1.50    # Filtro Sentiment Indice
+MOLTIPLICATORE_QUANTUM = 1.200  # Entry ritardata per maggiore sicurezza
+SOGLIA_NOTIFICA = 0.05          
+SOGLIA_PANICO_INDICE = -1.50    
 
-# --- MAPPA ASSET COMPLETA (Ripristinata da v23/24) ---
+# --- MAPPA ASSET INTEGRALE (RIPRISTINATA AL 100%) ---
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX", "dir": "CSSPX"},
     "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC", "dir": "ANX"},
@@ -99,17 +97,11 @@ def main():
         print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset...")
     except: return
     
+    lista_nuovi, lista_update, lista_cancella = [], [], []
     cambiamenti = False
-    messaggi_urgenti = []
-    
-    pendenti_db = {}
-    if supabase:
-        res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
-        pendenti_db = {item['ticker']: item for item in res.data}
 
     for t in symbols:
-        is_crypto = "-USD" in t
-        if is_weekend and not is_crypto: continue
+        if is_weekend and "-USD" not in t: continue
 
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
@@ -118,8 +110,7 @@ def main():
             df = calcola_indicatori(df)
             
             p = float(df['Close'].iloc[-1].item())
-            h_r = float(df['High'].rolling(100).max().iloc[-1])
-            l_r = float(df['Low'].rolling(100).min().iloc[-1])
+            h_r, l_r = float(df['High'].rolling(100).max().iloc[-1]), float(df['Low'].rolling(100).min().iloc[-1])
             range_h = h_r - l_r
             is_acc = p < (h_r + l_r) / 2
             fase_attuale = "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE"
@@ -136,67 +127,87 @@ def main():
                     idx_perf = ((idx_df['Close'].iloc[-1] / idx_df['Open'].iloc[-1]) - 1) * 100
                 except: idx_perf = 0.0
 
-            # LOGICA A: NUOVO INGRESSO (Solo se Sentiment OK)
             rsi_val = float(df['RSI'].iloc[-1])
             conf_rsi = (10 <= rsi_val <= 42) if is_acc else (58 <= rsi_val <= 90)
             vol_status = df['Vol_MA_Short'].iloc[-1] < (df['Vol_MA_Long'].iloc[-1] * 1.6)
 
-            if dist < SOGLIA_NOTIFICA and t_clean not in pendenti_db and idx_perf > SOGLIA_PANICO_INDICE and conf_rsi and vol_status:
-                tp = lvl + (range_h * TP_ADJUSTER) if is_acc else lvl - (range_h * TP_ADJUSTER)
-                sl = lvl - (df['ATR'].iloc[-1] * 2.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 2.5)
-                messaggi_urgenti.append({"t": t, "tipo": "NUOVO", "lvl": lvl, "tp": tp, "sl": sl, "fase": fase_attuale, "df": df, "rsi": rsi_val, "is_acc": is_acc, "idx_perf": idx_perf})
-                if supabase:
-                    supabase.table("segnali_trading").insert({
-                        "ticker": t_clean, "fase": fase_attuale, "stato": "Pendente", 
-                        "prezzo_ingresso": round(lvl, 5), "tp": round(tp, 5), "sl": round(sl, 5)
-                    }).execute()
-                cambiamenti = True
+            d = {
+                "t": t, "p": p, "rsi": rsi_val, "dist": dist, "lvl": lvl, "idx_perf": idx_perf,
+                "tp": lvl + (range_h * 0.70) if is_acc else lvl - (range_h * 0.70),
+                "sl": lvl - (df['ATR'].iloc[-1] * 2.5) if is_acc else lvl + (df['ATR'].iloc[-1] * 2.5),
+                "fase": fase_attuale, "azione": "BUY LIMIT" if is_acc else "SELL LIMIT", "df": df
+            }
 
-            # LOGICA B: CHIUSURA PER INVERSIONE DI FASE
-            elif t_clean in pendenti_db:
-                pos_db = pendenti_db[t_clean]
-                if (pos_db['fase'] == "ACCUMULAZIONE" and not is_acc) or (pos_db['fase'] == "DISTRIBUZIONE" and is_acc):
-                    messaggi_urgenti.append({"t": t, "tipo": "CHIUDI", "motivo": f"Inversione ({fase_attuale})", "df": df, "lvl": lvl, "tp": 0, "sl": 0})
-                    if supabase:
-                        supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t_clean).execute()
+            check_db = supabase.table("segnali_trading").select("*").eq("ticker", t_clean).eq("stato", "Pendente").execute() if supabase else None
+            gia_pendente = bool(check_db and check_db.data)
+
+            # --- LOGICA SMISTAMENTO ---
+            if dist < SOGLIA_NOTIFICA and conf_rsi and vol_status and idx_perf > SOGLIA_PANICO_INDICE:
+                if not gia_pendente:
+                    lista_nuovi.append(d)
+                    if supabase: supabase.table("segnali_trading").insert({
+                        "ticker": t_clean, "fase": d['fase'], "stato": "Pendente", 
+                        "prezzo_ingresso": round(lvl, 5), "tp": round(d['tp'], 5), "sl": round(d['sl'], 5),
+                        "distanza_minima_raggiunta": round(dist, 5)
+                    }).execute()
                     cambiamenti = True
+                else:
+                    # Se la fase nel DB è diversa da quella rilevata ora -> CHIUDI PER INVERSIONE
+                    if check_db.data[0]['fase'] != fase_attuale:
+                        d['motivo'] = f"Inversione Fase ({fase_attuale})"
+                        lista_cancella.append(d)
+                        if supabase: supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t_clean).execute()
+                        cambiamenti = True
+                    else:
+                        lista_update.append(d)
+            elif gia_pendente and (dist > (SOGLIA_NOTIFICA * 1.5) or idx_perf < SOGLIA_PANICO_INDICE):
+                d['motivo'] = "Target troppo lontano o Panico Indici"
+                lista_cancella.append(d)
+                if supabase: supabase.table("segnali_trading").update({"stato": "Annullato"}).eq("ticker", t_clean).execute()
+                cambiamenti = True
 
         except: continue
 
     # --- INVIO TELEGRAM ---
-    for m in messaggi_urgenti:
-        header = "🆕 <b>NUOVO ALERT</b>" if m['tipo'] == "NUOVO" else "⚠️ <b>CHIUDI POSIZIONE</b>"
-        asset_info = MAPPA_ASSET.get(m['t'], {"cat": "📊 ASSET", "tv": m['t']})
+    def invia_telegram(d, header, show_filters=True):
+        asset_info = MAPPA_ASSET.get(d['t'], {"cat": "📊 ASSET", "tv": d['t']})
         tv_link = f"https://it.tradingview.com/chart/?symbol={asset_info['tv']}"
         directa_link = "https://www.directatrading.com/app/"
         
         msg = (f"{header}\n"
-               f"{asset_info['cat']} | 🎯 <b>SEGNALE</b>\n"
+               f"{asset_info['cat']} | 🎯 <b>{d['azione']}</b>\n"
                f"----------------------------------\n"
-               f"<b>Asset:</b> <code>{m['t']}</code>\n"
-               f"<b>Fase:</b> {m['fase']}\n\n"
-               f"🔵 <b>ENTRY: {m['lvl']:.4f}</b>\n"
-               f"🟢 <b>TP: {m['tp']:.4f}</b>\n"
-               f"🔴 <b>SL: {m['sl']:.4f}</b>\n\n")
+               f"<b>Asset:</b> <code>{d['t']}</code>\n"
+               f"<b>Fase:</b> {d['fase']}\n\n"
+               f"🔵 <b>ENTRY: {d['lvl']:.4f}</b>\n"
+               f"🟢 <b>TP: {d['tp']:.4f}</b>\n"
+               f"🔴 <b>SL: {d['sl']:.4f}</b>\n\n")
         
-        if m['tipo'] == "NUOVO":
+        if show_filters:
             msg += (f"🛡️ <b>STATUS:</b>\n"
-                    f"✅ RSI: {m['rsi']:.1f}\n"
-                    f"✅ Sentiment: {m['idx_perf']:+.2f}%\n\n")
+                    f"✅ RSI: {d['rsi']:.1f}\n"
+                    f"✅ Sentiment: {d['idx_perf']:+.2f}%\n\n")
+        elif 'motivo' in d:
+            msg += f"❗ <b>MOTIVO:</b> {d['motivo']}\n\n"
         
         msg += f"🔗 <a href='{tv_link}'>TradingView</a> | <a href='{directa_link}'>Directa</a>"
 
-        plot_data = m['df'].iloc[-50:]
+        plot_data = d['df'].iloc[-50:]
         ap = [mpf.make_addplot(plot_data['UpperB'], color='gray', alpha=0.3), mpf.make_addplot(plot_data['LowerB'], color='gray', alpha=0.3)]
         mpf.plot(plot_data, type='candle', style='charles', addplot=ap, savefig='p.png', 
-                 hlines=dict(hlines=[m['lvl'], m['tp'], m['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
+                 hlines=dict(hlines=[d['lvl'], d['tp'], d['sl']], colors=['blue', 'green', 'red'], linestyle='-.'))
         
         with open('p.png', 'rb') as f:
             requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", files={'photo': f}, data={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'})
 
+    for d in lista_nuovi: invia_telegram(d, "🆕 <b>NUOVO ALERT</b>")
+    for d in lista_update: invia_telegram(d, "🔄 <b>UPDATE POSIZIONE</b>")
+    for d in lista_cancella: invia_telegram(d, "⚠️ <b>ORDINE CANCELLATO/CHIUSO</b>", show_filters=False)
+
     if cambiamenti:
         res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
-        report = "📊 <b>REPORT POSIZIONI ATTIVE</b>\n\n" + "\n".join([f"🔹 {p['ticker']} ({p['fase']}) @ {p['prezzo_ingresso']}" for p in res.data])
+        posizioni = [f"🔹 {p['ticker']} ({p['fase']}) @ {p['prezzo_ingresso']}" for p in res.data]
+        report = "📊 <b>REPORT POSIZIONI ATTIVE</b>\n\n" + ("\n".join(posizioni) if posizioni else "Nessuna posizione.")
         requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': report, 'parse_mode': 'HTML'})
 
 if __name__ == "__main__":
