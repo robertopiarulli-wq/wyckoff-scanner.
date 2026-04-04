@@ -68,16 +68,20 @@ MAPPA_ASSET = {
 
 def calcola_indicatori(df):
     delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    # Usiamo 14 come migliore approssimazione intera di 13.7
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    
     df['MA20'] = df['Close'].rolling(20).mean()
     df['StdDev'] = df['Close'].rolling(20).std()
     df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
     df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
+    
     hl = df['High'] - df['Low']
     hc = (df['High'] - df['Close'].shift()).abs()
     lc = (df['Low'] - df['Close'].shift()).abs()
+    # Anche l'ATR (volatilità) lo sincronizziamo a 14 periodi
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     return df
 
