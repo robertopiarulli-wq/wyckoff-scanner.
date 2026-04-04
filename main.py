@@ -93,7 +93,7 @@ def crea_grafico(df, t, lvl):
 
 def main():
     is_weekend = datetime.now().weekday() > 4
-    cambiamenti = False
+    cambiamenti = False  # Dichiarazione corretta all'inizio del main
     
     try:
         with open('tickers.txt', 'r') as f:
@@ -140,12 +140,12 @@ def main():
                             "ticker": t_clean, "fase": fase_attuale, "stato": "Pendente", 
                             "prezzo_ingresso": round(lvl, 5), "tp": round(tp, 5), "sl": round(sl, 5), "rsi": round(rsi_val, 2)
                         }).execute()
-                    cambiamenti = True
+                    cambiamenti = True  # Segnala che c'è un nuovo alert
             elif gia_pendente:
                 if check_db.data[0]['fase'] != fase_attuale or dist > (SOGLIA_NOTIFICA * 2.0):
                     lista_cancella.append({"t": t, "motivo": "Inversione Trend/Lontano"})
                     if supabase: supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t_clean).execute()
-                    cambiamenti = True
+                    cambiamenti = True  # Segnala che è stata chiusa una posizione
         except: continue
 
     def invia_telegram(d, header, show_filters=True):
@@ -165,7 +165,8 @@ def main():
     for d in lista_nuovi: invia_telegram(d, "🆕 <b>NUOVO ALERT</b>")
     for d in lista_cancella: invia_telegram(d, "⚠️ <b>ORDINE CHIUSO</b>", False)
 
-    if True and supabase:
+    # Invio report finale solo se ci sono stati cambiamenti (Nuovi o Chiusi)
+    if cambiamenti and supabase:
         res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
         limit_txt, live_txt = [], []
         for p in res.data:
@@ -174,6 +175,8 @@ def main():
                 last_df = yf.download(t_orig, period="1d", progress=False)
                 last_p = float(last_df['Close'].iloc[-1].item())
                 link = f"<a href='https://it.tradingview.com/chart/?symbol={MAPPA_ASSET.get(t_orig, {'tv': p['ticker']})['tv']}'>📈</a>"
+                
+                # Linea dettagliata con tutti i valori salvati
                 linea = f"{link} <b>{p['ticker']}</b>\n      └ 🔵 Ingr: <code>{p['prezzo_ingresso']}</code> | RSI: <code>{p.get('rsi', 'N/D')}</code>\n      └ 🟢 TP: <code>{p.get('tp', 'N/D')}</code> | 🔴 SL: <code>{p.get('sl', 'N/D')}</code>"
                 
                 if (p['fase'] == "ACCUMULAZIONE" and last_p <= p['prezzo_ingresso']) or (p['fase'] == "DISTRIBUZIONE" and last_p >= p['prezzo_ingresso']):
