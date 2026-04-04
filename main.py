@@ -19,7 +19,7 @@ ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 1.618  
 SOGLIA_NOTIFICA = 0.05          
 
-# --- MAPPA ASSET COMPLETA (TUTTI I 47 ASSET) ---
+# --- MAPPA ASSET COMPLETA ---
 MAPPA_ASSET = {
     "^GSPC": {"cat": "📈 INDICE USA", "tv": "SPX"},
     "^NDX":  {"cat": "📈 INDICE TECH", "tv": "IXIC"},
@@ -99,24 +99,23 @@ def main():
         with open('tickers.txt', 'r') as f:
             symbols = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except Exception as e:
-        print(f"❌ Errore lettura tickers: {e}")
+        print(f"❌ Errore tickers: {e}")
         return
 
-    print(f"🚀 SCANSIONE IN CORSO SU {len(symbols)} ASSET...")
+    print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset...")
+    lista_nuovi, lista_cancella = [], []
 
     for t in symbols:
-        # LOG DI PROCESSO: Vedrai questo per ogni riga di tickers.txt
-        if is_weekend and "-USD" not in t:
-            continue # Salta indici/azioni nel weekend
-            
-        print(f"🔍 Analisi: {t}...") # Conferma che il bot sta scaricando i dati
+        if is_weekend and "-USD" not in t: continue
+        
+        print(f"🔍 Analisi: {t}...") # Conferma che sta processando l'asset
         
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
-            if df.empty or len(df) < 50:
+            if df.empty or len(df) < 50: 
                 print(f"⚠️ Dati insufficienti per {t}")
                 continue
-                
+            
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
             
@@ -130,11 +129,10 @@ def main():
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             dist = abs(p - lvl) / lvl
             t_clean = t.replace('^', '').split('.')[0]
-            rsi_val = df['RSI'].iloc[-1]
+            rsi_val = df['RSI'].iloc[-1] # Definito prima del print
 
-            # --- IL LOG CHE TI SERVE ---
-            # Questo apparirà nei log di GitHub per ogni Crypto scansionata
-            print(f"📊 {t_clean} | Prezzo: {p:.2f} | Target: {lvl:.2f} | Dist: {dist:.2%} | RSI: {rsi_val:.1f}")
+            # LOG DI MONITORAGGIO (Visibile su GitHub)
+            print(f"📊 {t_clean} | Distanza: {dist:.2%} | RSI: {rsi_val:.1f} | Fase: {fase_attuale}")
 
             conf_rsi = (is_acc and rsi_val < 48) or (not is_acc and rsi_val > 52)
             
@@ -159,8 +157,8 @@ def main():
                     lista_cancella.append({"t": t, "motivo": "Inversione Trend/Lontano"})
                     if supabase: supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t_clean).execute()
                     cambiamenti = True
-        except Exception as e:
-            print(f"❌ Errore tecnico su {t}: {e}")
+        except Exception as e: 
+            print(f"❌ Errore su {t}: {e}")
             continue
 
     def invia_telegram(d, header, show_filters=True):
@@ -180,7 +178,6 @@ def main():
     for d in lista_nuovi: invia_telegram(d, "🆕 <b>NUOVO ALERT</b>")
     for d in lista_cancella: invia_telegram(d, "⚠️ <b>ORDINE CHIUSO</b>", False)
 
-    # Invio report finale solo se ci sono stati cambiamenti (Nuovi o Chiusi)
     if cambiamenti and supabase:
         res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
         limit_txt, live_txt = [], []
@@ -190,8 +187,6 @@ def main():
                 last_df = yf.download(t_orig, period="1d", progress=False)
                 last_p = float(last_df['Close'].iloc[-1].item())
                 link = f"<a href='https://it.tradingview.com/chart/?symbol={MAPPA_ASSET.get(t_orig, {'tv': p['ticker']})['tv']}'>📈</a>"
-                
-                # Linea dettagliata con tutti i valori salvati
                 linea = f"{link} <b>{p['ticker']}</b>\n      └ 🔵 Ingr: <code>{p['prezzo_ingresso']}</code> | RSI: <code>{p.get('rsi', 'N/D')}</code>\n      └ 🟢 TP: <code>{p.get('tp', 'N/D')}</code> | 🔴 SL: <code>{p.get('sl', 'N/D')}</code>"
                 
                 if (p['fase'] == "ACCUMULAZIONE" and last_p <= p['prezzo_ingresso']) or (p['fase'] == "DISTRIBUZIONE" and last_p >= p['prezzo_ingresso']):
