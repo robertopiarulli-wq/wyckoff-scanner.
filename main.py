@@ -112,7 +112,7 @@ def main():
         print(f"🔍 Analisi: {t}...")
         
         try:
-            df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
+            df = yf.download(t, period="1y", interval="4h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 50: 
                 print(f"⚠️ Dati insufficienti per {t}")
                 continue
