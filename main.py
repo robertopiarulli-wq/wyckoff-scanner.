@@ -93,21 +93,30 @@ def crea_grafico(df, t, lvl):
 
 def main():
     is_weekend = datetime.now().weekday() > 4
-    cambiamenti = False  # Dichiarazione corretta all'inizio del main
+    cambiamenti = False
     
     try:
         with open('tickers.txt', 'r') as f:
             symbols = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    except: return
+    except Exception as e:
+        print(f"❌ Errore lettura tickers: {e}")
+        return
 
-    print(f"🚀 SCANSIONE COMPLETA: {len(symbols)} asset...")
-    lista_nuovi, lista_cancella = [], []
+    print(f"🚀 SCANSIONE IN CORSO SU {len(symbols)} ASSET...")
 
     for t in symbols:
-        if is_weekend and "-USD" not in t: continue
+        # LOG DI PROCESSO: Vedrai questo per ogni riga di tickers.txt
+        if is_weekend and "-USD" not in t:
+            continue # Salta indici/azioni nel weekend
+            
+        print(f"🔍 Analisi: {t}...") # Conferma che il bot sta scaricando i dati
+        
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
-            if df.empty or len(df) < 50: continue
+            if df.empty or len(df) < 50:
+                print(f"⚠️ Dati insufficienti per {t}")
+                continue
+                
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
             
@@ -121,10 +130,12 @@ def main():
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             dist = abs(p - lvl) / lvl
             t_clean = t.replace('^', '').split('.')[0]
-            # --- AGGIUNGI QUESTA RIGA PER VEDERE I DATI NEI LOG DI GITHUB ---
-            print(f"🔍 ASSET: {t_clean} | Distanza: {dist:.2%} | RSI: {rsi_val:.1f}")
-
             rsi_val = df['RSI'].iloc[-1]
+
+            # --- IL LOG CHE TI SERVE ---
+            # Questo apparirà nei log di GitHub per ogni Crypto scansionata
+            print(f"📊 {t_clean} | Prezzo: {p:.2f} | Target: {lvl:.2f} | Dist: {dist:.2%} | RSI: {rsi_val:.1f}")
+
             conf_rsi = (is_acc and rsi_val < 48) or (not is_acc and rsi_val > 52)
             
             check_db = supabase.table("segnali_trading").select("*").eq("ticker", t_clean).eq("stato", "Pendente").execute() if supabase else None
@@ -142,13 +153,15 @@ def main():
                             "ticker": t_clean, "fase": fase_attuale, "stato": "Pendente", 
                             "prezzo_ingresso": round(lvl, 5), "tp": round(tp, 5), "sl": round(sl, 5), "rsi": round(rsi_val, 2)
                         }).execute()
-                    cambiamenti = True  # Segnala che c'è un nuovo alert
+                    cambiamenti = True
             elif gia_pendente:
                 if check_db.data[0]['fase'] != fase_attuale or dist > (SOGLIA_NOTIFICA * 2.0):
                     lista_cancella.append({"t": t, "motivo": "Inversione Trend/Lontano"})
                     if supabase: supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t_clean).execute()
-                    cambiamenti = True  # Segnala che è stata chiusa una posizione
-        except: continue
+                    cambiamenti = True
+        except Exception as e:
+            print(f"❌ Errore tecnico su {t}: {e}")
+            continue
 
     def invia_telegram(d, header, show_filters=True):
         asset = MAPPA_ASSET.get(d['t'], {"cat": "📊 ASSET", "tv": d['t']})
