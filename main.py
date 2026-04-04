@@ -121,8 +121,8 @@ def main():
             df = calcola_indicatori(df)
             
             p = float(df['Close'].iloc[-1].item())
-            h_r = float(df['High'].rolling(100).max().iloc[-1])
-            l_r = float(df['Low'].rolling(100).min().iloc[-1])
+            h_r = float(df['High'].rolling(137).max().iloc[-1])
+            l_r = float(df['Low'].rolling(137).min().iloc[-1])
             range_h = h_r - l_r
             
             is_acc = p < (h_r + l_r) / 2
