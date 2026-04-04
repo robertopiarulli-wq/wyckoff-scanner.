@@ -85,9 +85,10 @@ def crea_grafico(df, t, lvl):
     buf = io.BytesIO()
     ap = [mpf.make_addplot(df['LowerB'], color='gray', alpha=0.3),
           mpf.make_addplot(df['UpperB'], color='gray', alpha=0.3)]
+    # Corretto l'errore del kwarg format
     mpf.plot(df.tail(40), type='candle', style='charles', addplot=ap,
              hlines=dict(hlines=[lvl], colors=['blue'], linestyle='--'),
-             savefig=buf, format='png')
+             savefig=dict(fname=buf, format='png'))
     buf.seek(0)
     return buf
 
@@ -108,7 +109,7 @@ def main():
     for t in symbols:
         if is_weekend and "-USD" not in t: continue
         
-        print(f"🔍 Analisi: {t}...") # Conferma che sta processando l'asset
+        print(f"🔍 Analisi: {t}...")
         
         try:
             df = yf.download(t, period="3mo", interval="4h", progress=False, auto_adjust=True)
@@ -129,9 +130,8 @@ def main():
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             dist = abs(p - lvl) / lvl
             t_clean = t.replace('^', '').split('.')[0]
-            rsi_val = df['RSI'].iloc[-1] # Definito prima del print
+            rsi_val = df['RSI'].iloc[-1]
 
-            # LOG DI MONITORAGGIO (Visibile su GitHub)
             print(f"📊 {t_clean} | Distanza: {dist:.2%} | RSI: {rsi_val:.1f} | Fase: {fase_attuale}")
 
             conf_rsi = (is_acc and rsi_val < 48) or (not is_acc and rsi_val > 52)
