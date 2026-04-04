@@ -121,6 +121,8 @@ def main():
             lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             dist = abs(p - lvl) / lvl
             t_clean = t.replace('^', '').split('.')[0]
+            # --- AGGIUNGI QUESTA RIGA PER VEDERE I DATI NEI LOG DI GITHUB ---
+            print(f"🔍 ASSET: {t_clean} | Distanza: {dist:.2%} | RSI: {rsi_val:.1f}")
 
             rsi_val = df['RSI'].iloc[-1]
             conf_rsi = (is_acc and rsi_val < 48) or (not is_acc and rsi_val > 52)
