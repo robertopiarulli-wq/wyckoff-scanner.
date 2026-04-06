@@ -22,62 +22,65 @@ SOGLIA_NOTIFICA = 0.05
 # --- MAPPA ASSET COMPLETA ---
 MAPPA_ASSET = {
     # INDICI E ETF
-    "^GSPC": {"cat": "📈 INDICE USA", "tv": "CME_MINI:ES1!"},
-    "^NDX":  {"cat": "📈 INDICE TECH", "tv": "CME_MINI:NQ1!"},
+    "^GSPC": {"cat": "📈 INDICE USA (S&P500)", "tv": "CME_MINI:ES1!"},
+    "^NDX":  {"cat": "📈 INDICE TECH (NAS100)", "tv": "CME_MINI:NQ1!"},
     "^GDAXI": {"cat": "📈 INDICE DAX", "tv": "EUREX:FDAX1!"},
     "FTSEMIB.MI": {"cat": "📈 INDICE MIB", "tv": "INDEX:FTSEMIB"},
+    "DIA": {"cat": "📈 INDICE DOW JONES", "tv": "CBOT:YM1!"},
     "CSSPX.MI": {"cat": "🇮🇹 ETF S&P500", "tv": "MIL:CSSPX"},
     "ANX.MI": {"cat": "🇮🇹 ETF NASDAQ", "tv": "MIL:ANX"},
     "SWDA.MI": {"cat": "🌍 ETF WORLD", "tv": "MIL:SWDA"},
     "QQQ": {"cat": "📊 NASDAQ 100 ETF", "tv": "NASDAQ:QQQ"},
-    "IWM": {"cat": "🚜 SMALL CAPS", "tv": "AMEX:IWM"},
+    "IWM": {"cat": "🚜 SMALL CAPS ETF", "tv": "AMEX:IWM"},
 
-    # SETTORIALI
-    "XLF": {"cat": "🏦 SECTOR (FINANCE)", "tv": "AMEX:XLF"},
-    "XLE": {"cat": "🛢️ SECTOR (ENERGY)", "tv": "AMEX:XLE"},
-    "XLV": {"cat": "💊 SECTOR (HEALTH)", "tv": "AMEX:XLV"},
-    "SMH": {"cat": "💾 SECTOR (CHIPS)", "tv": "AMEX:SMH"},
+    # TECH & SEMICONDUTTORI
+    "AAPL": {"cat": "🍎 APPLE", "tv": "NASDAQ:AAPL"},
+    "NVDA": {"cat": "🤖 NVIDIA", "tv": "NASDAQ:NVDA"},
+    "TSLA": {"cat": "⚡ TESLA", "tv": "NASDAQ:TSLA"},
+    "AMZN": {"cat": "📦 AMAZON", "tv": "NASDAQ:AMZN"},
+    "META": {"cat": "📱 META", "tv": "NASDAQ:META"},
+    "MSFT": {"cat": "💻 MICROSOFT", "tv": "NASDAQ:MSFT"},
+    "GOOGL": {"cat": "🔍 GOOGLE", "tv": "NASDAQ:GOOGL"},
+    "AVGO": {"cat": "🔌 BROADCOM", "tv": "NASDAQ:AVGO"},
+    "ASML": {"cat": "🔬 ASML", "tv": "NASDAQ:ASML"},
+    "SMH": {"cat": "💾 CHIPS SECTOR", "tv": "AMEX:SMH"},
 
-    # TECH STOCKS
-    "AAPL": {"cat": "🍎 TECH (APPLE)", "tv": "NASDAQ:AAPL"},
-    "NVDA": {"cat": "🤖 TECH (NVIDIA)", "tv": "NASDAQ:NVDA"},
-    "TSLA": {"cat": "⚡ TECH (TESLA)", "tv": "NASDAQ:TSLA"},
-    "AMZN": {"cat": "📦 TECH (AMAZON)", "tv": "NASDAQ:AMZN"},
-    "META": {"cat": "📱 TECH (META)", "tv": "NASDAQ:META"},
-    "MSFT": {"cat": "💻 TECH (MICROSOFT)", "tv": "NASDAQ:MSFT"},
-    "GOOGL": {"cat": "🔍 TECH (GOOGLE)", "tv": "NASDAQ:GOOGL"},
-    "AVGO": {"cat": "🔌 TECH (BROADCOM)", "tv": "NASDAQ:AVGO"},
-    "ASML": {"cat": "🔬 TECH (ASML)", "tv": "NASDAQ:ASML"},
+    # SETTORIALI & VALUE
+    "XLF": {"cat": "🏦 FINANCE SECTOR", "tv": "AMEX:XLF"},
+    "XLE": {"cat": "🛢️ ENERGY SECTOR", "tv": "AMEX:XLE"},
+    "XLV": {"cat": "💊 HEALTH SECTOR", "tv": "AMEX:XLV"},
+    "KO": {"cat": "🥤 COCA COLA", "tv": "NYSE:KO"},
+    "PEP": {"cat": "🍿 PEPSICO", "tv": "NASDAQ:PEP"},
+    "PG": {"cat": "🧼 PROCTER & GAMBLE", "tv": "NYSE:PG"},
+    "JNJ": {"cat": "🩺 JOHNSON & JOHNSON", "tv": "NYSE:JNJ"},
 
-    # COMMODITIES (FUTURES CONTINUI 1!)
-    "GC=F": {"cat": "⛏️ METALS (GOLD)", "tv": "COMEX:GC1!"},
-    "SI=F": {"cat": "⛏️ METALS (SILVER)", "tv": "COMEX:SI1!"},
-    "CL=F": {"cat": "🛢️ ENERGY (OIL)", "tv": "NYMEX:CL1!"},
-    "NG=F": {"cat": "🔥 ENERGY (GAS)", "tv": "NYMEX:NG1!"},
-    "KC=F": {"cat": "☕ SOFT (COFFEE)", "tv": "ICEUS:KC1!"},
-    "SB=F": {"cat": "🍭 SOFT (SUGAR)", "tv": "ICEUS:SB1!"},
-    "HG=F": {"cat": "🏗️ METALS (COPPER)", "tv": "COMEX:HG1!"},
-    "ZS=F": {"cat": "🌱 SOYBEANS", "tv": "CBOT:ZS1!"}, # Aggiunta per completezza
+    # METALLI & ENERGIA (FUTURES)
+    "GC=F": {"cat": "⛏️ GOLD", "tv": "COMEX:GC1!"},
+    "SI=F": {"cat": "⛏️ SILVER", "tv": "COMEX:SI1!"},
+    "HG=F": {"cat": "🏗️ COPPER", "tv": "COMEX:HG1!"},
+    "PL=F": {"cat": "💍 PLATINUM", "tv": "NYMEX:PL1!"},
+    "CL=F": {"cat": "🛢️ CRUDE OIL", "tv": "NYMEX:CL1!"},
+    "NG=F": {"cat": "🔥 NATGAS", "tv": "NYMEX:NG1!"},
 
-    # CRYPTO
-    "BTC-USD": {"cat": "🌐 CRYPTO (BTC)", "tv": "BINANCE:BTCUSDT"},
-    "ETH-USD": {"cat": "🌐 CRYPTO (ETH)", "tv": "BINANCE:ETHUSDT"},
-    "SOL-USD": {"cat": "🌐 CRYPTO (SOL)", "tv": "BINANCE:SOLUSDT"},
-    "ADA-USD": {"cat": "🌐 CRYPTO (ADA)", "tv": "BINANCE:ADAUSDT"},
-    "DOT-USD": {"cat": "🌐 CRYPTO (DOT)", "tv": "BINANCE:DOTUSDT"},
-    "AVAX-USD": {"cat": "🌐 CRYPTO (AVAX)", "tv": "BINANCE:AVAXUSDT"},
-    "LINK-USD": {"cat": "🌐 CRYPTO (LINK)", "tv": "BINANCE:LINKUSDT"},
-    "XRP-USD": {"cat": "🌐 CRYPTO (XRP)", "tv": "BINANCE:XRPUSDT"},
+    # SOFT COMMODITIES (FUTURES)
+    "KC=F": {"cat": "☕ COFFEE", "tv": "ICEUS:KC1!"},
+    "SB=F": {"cat": "🍭 SUGAR", "tv": "ICEUS:SB1!"},
+    "ZW=F": {"cat": "🌾 WHEAT (GRANO)", "tv": "CBOT:ZW1!"},
+    "ZS=F": {"cat": "🌱 SOYBEANS (SOIA)", "tv": "CBOT:ZS1!"},
 
-    # VALUE STOCKS
-    "KO": {"cat": "🥤 VALUE (COCA COLA)", "tv": "NYSE:KO"},
-    "PEP": {"cat": "🍿 VALUE (PEPSICO)", "tv": "NASDAQ:PEP"},
-    "PG": {"cat": "🧼 VALUE (P&G)", "tv": "NYSE:PG"},
-    "JNJ": {"cat": "🩺 VALUE (J&J)", "tv": "NYSE:JNJ"},
+    # CRYPTO (24/7)
+    "BTC-USD": {"cat": "🌐 BITCOIN", "tv": "BINANCE:BTCUSDT"},
+    "ETH-USD": {"cat": "🌐 ETHEREUM", "tv": "BINANCE:ETHUSDT"},
+    "SOL-USD": {"cat": "🌐 SOLANA", "tv": "BINANCE:SOLUSDT"},
+    "ADA-USD": {"cat": "🌐 CARDANO", "tv": "BINANCE:ADAUSDT"},
+    "DOT-USD": {"cat": "🌐 POLKADOT", "tv": "BINANCE:DOTUSDT"},
+    "AVAX-USD": {"cat": "🌐 AVAX", "tv": "BINANCE:AVAXUSDT"},
+    "LINK-USD": {"cat": "🌐 CHAINLINK", "tv": "BINANCE:LINKUSDT"},
+    "XRP-USD": {"cat": "🌐 RIPPLE", "tv": "BINANCE:XRPUSDT"},
 
     # FOREX
-    "EURUSD=X": {"cat": "💱 FOREX (EUR/USD)", "tv": "FX:EURUSD"},
-    "GBPUSD=X": {"cat": "💱 FOREX (GBP/USD)", "tv": "FX:GBPUSD"}
+    "EURUSD=X": {"cat": "💱 EUR/USD", "tv": "FX:EURUSD"},
+    "GBPUSD=X": {"cat": "💱 GBP/USD", "tv": "FX:GBPUSD"}
 }
 def calcola_indicatori(df):
     delta = df['Close'].diff()
