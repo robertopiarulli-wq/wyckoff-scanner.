@@ -86,11 +86,16 @@ def calcola_indicatori(df):
     return df
 
 def crea_grafico(df, t, lvl):
-    buf = io.BytesIO()
-    ap = [mpf.make_addplot(df['LowerB'], color='gray', alpha=0.3),
-          mpf.make_addplot(df['UpperB'], color='gray', alpha=0.3)]
-    # Corretto l'errore del kwarg format
-    mpf.plot(df.tail(40), type='candle', style='charles', addplot=ap,
+   buf = io.BytesIO()
+    # Prendiamo le ultime 40 candele in modo esplicito per evitare conflitti
+    data_to_plot = df.tail(40).copy()
+    
+    ap = [
+        mpf.make_addplot(data_to_plot['LowerB'], color='gray', alpha=0.3),
+        mpf.make_addplot(data_to_plot['UpperB'], color='gray', alpha=0.3)
+    ]
+    
+    mpf.plot(data_to_plot, type='candle', style='charles', addplot=ap,
              hlines=dict(hlines=[lvl], colors=['blue'], linestyle='--'),
              savefig=dict(fname=buf, format='png'))
     buf.seek(0)
