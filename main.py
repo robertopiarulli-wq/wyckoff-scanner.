@@ -68,7 +68,6 @@ MAPPA_ASSET = {
 
 def calcola_indicatori(df):
     delta = df['Close'].diff()
-    # Usiamo 14 come migliore approssimazione intera di 13.7
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
@@ -81,13 +80,12 @@ def calcola_indicatori(df):
     hl = df['High'] - df['Low']
     hc = (df['High'] - df['Close'].shift()).abs()
     lc = (df['Low'] - df['Close'].shift()).abs()
-    # Anche l'ATR (volatilità) lo sincronizziamo a 14 periodi
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     return df
 
 def crea_grafico(df, t, lvl):
-   buf = io.BytesIO()
-    # Prendiamo le ultime 40 candele in modo esplicito per evitare conflitti
+    buf = io.BytesIO()
+    # TAGLIO DI VISUALIZZAZIONE: Ultime 40 candele per chiarezza nel messaggio
     data_to_plot = df.tail(40).copy()
     
     ap = [
@@ -122,7 +120,8 @@ def main():
         
         try:
             df = yf.download(t, period="1y", interval="4h", progress=False, auto_adjust=True)
-            if df.empty or len(df) < 50: 
+            # CONTROLLO SICUREZZA: Servono almeno 140 candele per calcolare Pauli (137)
+            if df.empty or len(df) < 140: 
                 print(f"⚠️ Dati insufficienti per {t}")
                 continue
             
@@ -130,6 +129,7 @@ def main():
             df = calcola_indicatori(df)
             
             p = float(df['Close'].iloc[-1].item())
+            # FREQUENZA DI PAULI (137 CANDELE) - NON TOCCATA!
             h_r = float(df['High'].rolling(137).max().iloc[-1])
             l_r = float(df['Low'].rolling(137).min().iloc[-1])
             range_h = h_r - l_r
