@@ -21,7 +21,6 @@ SOGLIA_NOTIFICA = 0.05
 
 # --- MAPPA ASSET COMPLETA ---
 MAPPA_ASSET = {
-    # INDICI E ETF
     "^GSPC": {"cat": "📈 INDICE USA (S&P500)", "tv": "CME_MINI:ES1!"},
     "^NDX":  {"cat": "📈 INDICE TECH (NAS100)", "tv": "CME_MINI:NQ1!"},
     "^GDAXI": {"cat": "📈 INDICE DAX", "tv": "EUREX:FDAX1!"},
@@ -32,8 +31,6 @@ MAPPA_ASSET = {
     "SWDA.MI": {"cat": "🌍 ETF WORLD", "tv": "MIL:SWDA"},
     "QQQ": {"cat": "📊 NASDAQ 100 ETF", "tv": "NASDAQ:QQQ"},
     "IWM": {"cat": "🚜 SMALL CAPS ETF", "tv": "AMEX:IWM"},
-
-    # TECH & SEMICONDUTTORI
     "AAPL": {"cat": "🍎 APPLE", "tv": "NASDAQ:AAPL"},
     "NVDA": {"cat": "🤖 NVIDIA", "tv": "NASDAQ:NVDA"},
     "TSLA": {"cat": "⚡ TESLA", "tv": "NASDAQ:TSLA"},
@@ -44,8 +41,6 @@ MAPPA_ASSET = {
     "AVGO": {"cat": "🔌 BROADCOM", "tv": "NASDAQ:AVGO"},
     "ASML": {"cat": "🔬 ASML", "tv": "NASDAQ:ASML"},
     "SMH": {"cat": "💾 CHIPS SECTOR", "tv": "AMEX:SMH"},
-
-    # SETTORIALI & VALUE
     "XLF": {"cat": "🏦 FINANCE SECTOR", "tv": "AMEX:XLF"},
     "XLE": {"cat": "🛢️ ENERGY SECTOR", "tv": "AMEX:XLE"},
     "XLV": {"cat": "💊 HEALTH SECTOR", "tv": "AMEX:XLV"},
@@ -53,22 +48,16 @@ MAPPA_ASSET = {
     "PEP": {"cat": "🍿 PEPSICO", "tv": "NASDAQ:PEP"},
     "PG": {"cat": "🧼 PROCTER & GAMBLE", "tv": "NYSE:PG"},
     "JNJ": {"cat": "🩺 JOHNSON & JOHNSON", "tv": "NYSE:JNJ"},
-
-    # METALLI & ENERGIA (FUTURES)
     "GC=F": {"cat": "⛏️ GOLD", "tv": "COMEX:GC1!"},
     "SI=F": {"cat": "⛏️ SILVER", "tv": "COMEX:SI1!"},
     "HG=F": {"cat": "🏗️ COPPER", "tv": "COMEX:HG1!"},
     "PL=F": {"cat": "💍 PLATINUM", "tv": "NYMEX:PL1!"},
     "CL=F": {"cat": "🛢️ CRUDE OIL", "tv": "NYMEX:CL1!"},
     "NG=F": {"cat": "🔥 NATGAS", "tv": "NYMEX:NG1!"},
-
-    # SOFT COMMODITIES (FUTURES)
     "KC=F": {"cat": "☕ COFFEE", "tv": "ICEUS:KC1!"},
     "SB=F": {"cat": "🍭 SUGAR", "tv": "ICEUS:SB1!"},
     "ZW=F": {"cat": "🌾 WHEAT (GRANO)", "tv": "CBOT:ZW1!"},
     "ZS=F": {"cat": "🌱 SOYBEANS (SOIA)", "tv": "CBOT:ZS1!"},
-
-    # CRYPTO (24/7)
     "BTC-USD": {"cat": "🌐 BITCOIN", "tv": "BINANCE:BTCUSDT"},
     "ETH-USD": {"cat": "🌐 ETHEREUM", "tv": "BINANCE:ETHUSDT"},
     "SOL-USD": {"cat": "🌐 SOLANA", "tv": "BINANCE:SOLUSDT"},
@@ -77,8 +66,6 @@ MAPPA_ASSET = {
     "AVAX-USD": {"cat": "🌐 AVAX", "tv": "BINANCE:AVAXUSDT"},
     "LINK-USD": {"cat": "🌐 CHAINLINK", "tv": "BINANCE:LINKUSDT"},
     "XRP-USD": {"cat": "🌐 RIPPLE", "tv": "BINANCE:XRPUSDT"},
-
-    # FOREX
     "EURUSD=X": {"cat": "💱 EUR/USD", "tv": "FX:EURUSD"},
     "GBPUSD=X": {"cat": "💱 GBP/USD", "tv": "FX:GBPUSD"}
 }
@@ -88,10 +75,7 @@ def calcola_indicatori(df):
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    df['MA20'] = df['Close'].rolling(20).mean()
-    df['StdDev'] = df['Close'].rolling(20).std()
-    df['UpperB'] = df['MA20'] + (df['StdDev'] * 2)
-    df['LowerB'] = df['MA20'] - (df['StdDev'] * 2)
+    df['MA20_Vol'] = df['Volume'].rolling(20).mean()
     hl, hc, lc = df['High'] - df['Low'], (df['High'] - df['Close'].shift()).abs(), (df['Low'] - df['Close'].shift()).abs()
     df['ATR'] = pd.concat([hl, hc, lc], axis=1).max(axis=1).rolling(14).mean()
     return df
@@ -99,9 +83,7 @@ def calcola_indicatori(df):
 def crea_grafico(df, t, lvl):
     buf = io.BytesIO()
     data_to_plot = df.tail(40).copy()
-    ap = [mpf.make_addplot(data_to_plot['LowerB'], color='gray', alpha=0.3),
-          mpf.make_addplot(data_to_plot['UpperB'], color='gray', alpha=0.3)]
-    mpf.plot(data_to_plot, type='candle', style='charles', addplot=ap,
+    mpf.plot(data_to_plot, type='candle', style='charles',
              hlines=dict(hlines=[lvl], colors=['blue'], linestyle='--'),
              savefig=dict(fname=buf, format='png'))
     buf.seek(0)
@@ -109,69 +91,79 @@ def crea_grafico(df, t, lvl):
 
 def main():
     is_weekend = datetime.now().weekday() > 4
-    cambiamenti = False
     try:
         with open('tickers.txt', 'r') as f:
             symbols = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except: return
 
-    lista_nuovi, lista_cancella = [], []
-
     for t in symbols:
         if is_weekend and "-USD" not in t: continue
         try:
-            # Sincronizzazione con Yahoo Finance
             df = yf.download(t, period="1y", interval="4h", progress=False, auto_adjust=True)
             if df.empty or len(df) < 140: continue
-            
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
             
             p = float(df['Close'].iloc[-1].item())
             h_r, l_r = float(df['High'].rolling(137).max().iloc[-1]), float(df['Low'].rolling(137).min().iloc[-1])
             range_h = h_r - l_r
-            is_acc = p < (h_r + l_r) / 2
-            fase = "ACCUMULAZIONE" if is_acc else "DISTRIBUZIONE"
-            lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             rsi_val = df['RSI'].iloc[-1]
+            vol_attuale = df['Volume'].iloc[-1]
+            vol_ma = df['MA20_Vol'].iloc[-1]
+            
+            is_acc = p < (h_r + l_r) / 2
+            lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
             dist = abs(p - lvl) / lvl
+            
+            fase_attiva = False
+            wyckoff_label = ""
 
-            # Controllo coerenza nomi colonne per Supabase
-            check_db = supabase.table("segnali_trading").select("*").eq("ticker", t).eq("stato", "Pendente").execute() if supabase else None
-            gia_pendente = bool(check_db and check_db.data)
+            # --- FILTRI WYCKOFF (Tabella Parametri) ---
+            # 1. Volume SOS/SOW (>1.5x MA20)
+            vol_confermato = vol_attuale > (vol_ma * 1.5)
+            
+            # 2. Logica Selettiva Accumulazione (Fase D/E)
+            if is_acc and dist < SOGLIA_NOTIFICA:
+                if vol_confermato and (35 <= rsi_val <= 55):
+                    fase_attiva = True
+                    wyckoff_label = "ACCUMULAZIONE (Fase D/E - SOS Attiva)"
+            
+            # 3. Logica Selettiva Distribuzione (Fase C/D)
+            elif not is_acc and dist < SOGLIA_NOTIFICA:
+                if vol_confermato and (45 <= rsi_val <= 65):
+                    fase_attiva = True
+                    wyckoff_label = "DISTRIBUZIONE (Fase C/D - SOW Attiva)"
 
-            if dist < SOGLIA_NOTIFICA and ((is_acc and rsi_val < 48) or (not is_acc and rsi_val > 52)):
-                if not gia_pendente:
+            if fase_attiva:
+                check = supabase.table("segnali_trading").select("*").eq("ticker", t).eq("stato", "Pendente").execute()
+                if not check.data:
                     tp = lvl + (range_h * 0.7) if is_acc else lvl - (range_h * 0.7)
                     sl = lvl - (df['ATR'].iloc[-1]*2) if is_acc else lvl + (df['ATR'].iloc[-1]*2)
-                    chart = crea_grafico(df, t, lvl)
-                    lista_nuovi.append({"t": t, "lvl": lvl, "tp": tp, "sl": sl, "chart": chart, "azione": "BUY LIMIT" if is_acc else "SELL LIMIT"})
+                    
                     if supabase:
-                        # Inserimento con ticker originale (es. FTSEMIB.MI)
                         supabase.table("segnali_trading").insert({
-                            "ticker": t, "fase": fase, "stato": "Pendente", 
+                            "ticker": t, "fase": wyckoff_label, "stato": "Pendente", 
                             "prezzo_ingresso": round(lvl, 5), "tp": round(tp, 5), "sl": round(sl, 5), "rsi": round(rsi_val, 2)
                         }).execute()
-                    cambiamenti = True
-            elif gia_pendente:
-                if check_db.data[0]['fase'] != fase or dist > (SOGLIA_NOTIFICA * 2.0):
-                    lista_cancella.append({"t": t, "motivo": "Inversione o Lontano"})
-                    if supabase: supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t).execute()
-                    cambiamenti = True
+                    
+                    asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
+                    chart = crea_grafico(df, t, lvl)
+                    msg = (f"🎯 <b>FASE WYCKOFF ATTIVA</b>\n"
+                           f"━━━━━━━━━━━━━━━\n"
+                           f"📦 <b>Stato:</b> {wyckoff_label}\n"
+                           f"📈 <b>Asset:</b> {asset['cat']} ({t})\n"
+                           f"🔵 <b>Buy/Sell Limit:</b> {lvl:.4f}\n"
+                           f"🟢 <b>Target:</b> {tp:.4f} | 🔴 <b>Stop:</b> {sl:.4f}\n"
+                           f"━━━━━━━━━━━━━━━\n"
+                           f"📊 <b>RSI:</b> {rsi_val:.1f} (Filtro OK)\n"
+                           f"🔊 <b>Volume SOS/SOW:</b> {vol_attuale/vol_ma:.1f}x (Soglia >1.5x)\n"
+                           f"🔗 <a href='https://it.tradingview.com/chart/?symbol={asset['tv']}'>TradingView</a>")
+                    
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
+                                 params={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'}, 
+                                 files={'photo': chart})
+
         except Exception as e: print(f"❌ Errore {t}: {e}")
-
-    # --- INVIO NOTIFICHE ---
-    for d in lista_nuovi:
-        asset = MAPPA_ASSET.get(d['t'], {"cat": "📊 ASSET", "tv": d['t']})
-        msg = f"🆕 <b>ALERT</b>\n{asset['cat']}\nEntry: {d['lvl']:.4f}\nTP: {d['tp']:.4f}\nSL: {d['sl']:.4f}"
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", params={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'}, files={'photo': d['chart']})
-
-    if cambiamenti and supabase:
-        res = supabase.table("segnali_trading").select("*").eq("stato", "Pendente").execute()
-        rep = "📊 <b>POSIZIONI ATTIVE</b>\n\n"
-        for p in res.data:
-            rep += f"• {p['ticker']} | Ingr: {p['prezzo_ingresso']}\n"
-        requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={'chat_id': CHAT_ID, 'text': rep, 'parse_mode': 'HTML'})
 
 if __name__ == "__main__":
     main()
