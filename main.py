@@ -116,29 +116,29 @@ def main():
             dist = abs(p - lvl) / lvl
             
             fase_attiva = False
-            wyckoff_db = "" # Etichetta per il Database (max 20 char)
-            wyckoff_msg = "" # Etichetta estesa per Telegram
+            wyckoff_db = "" 
+            wyckoff_msg = "" 
 
-            # --- FILTRI WYCKOFF (SOS/SOW) ---
             vol_confermato = vol_attuale > (vol_ma * 1.5)
             
             if is_acc and dist < SOGLIA_NOTIFICA:
                 if vol_confermato and (35 <= rsi_val <= 55):
                     fase_attiva = True
-                    wyckoff_db = "ACCUMULAZIONE (SOS)" # Lunghezza: 19 caratteri
+                    wyckoff_db = "ACCUMULAZIONE (SOS)" 
                     wyckoff_msg = "ACCUMULAZIONE (Fase D/E - SOS Attiva) ✅"
             
             elif not is_acc and dist < SOGLIA_NOTIFICA:
                 if vol_confermato and (45 <= rsi_val <= 65):
                     fase_attiva = True
-                    wyckoff_db = "DISTRIBUZIONE (SOW)" # Lunghezza: 19 caratteri
+                    wyckoff_db = "DISTRIBUZIONE (SOW)" 
                     wyckoff_msg = "DISTRIBUZIONE (Fase C/D - SOW Attiva) ✅"
 
             if fase_attiva:
-                # Pulizia ticker per uniformità database (es. FTSEMIB.MI -> FTSEMIB)
+                # CORREZIONE: Pulizia ticker per il controllo unicità nel database
                 t_db = t.replace('^', '').split('.')[0]
                 check = supabase.table("segnali_trading").select("*").eq("ticker", t_db).eq("stato", "Pendente").execute()
                 
+                # Inserisce solo se non esiste già un segnale "Pendente" per questo ticker
                 if not check.data:
                     tp = lvl + (range_h * 0.7) if is_acc else lvl - (range_h * 0.7)
                     sl = lvl - (df['ATR'].iloc[-1]*2) if is_acc else lvl + (df['ATR'].iloc[-1]*2)
@@ -165,6 +165,8 @@ def main():
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
                                  params={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'}, 
                                  files={'photo': chart})
+                else:
+                    print(f"ℹ️ Segnale per {t_db} già presente nel database. Salto inserimento.")
 
         except Exception as e: print(f"❌ Errore {t}: {e}")
 
