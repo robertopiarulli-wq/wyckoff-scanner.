@@ -134,21 +134,23 @@ def main():
                     wyckoff_msg = "DISTRIBUZIONE (Fase C/D - SOW Attiva) ✅"
 
             if fase_attiva:
-                # CORREZIONE: Pulizia ticker per il controllo unicità nel database
-                t_db = t.replace('^', '').split('.')[0]
-                check = supabase.table("segnali_trading").select("*").eq("ticker", t_db).eq("stato", "Pendente").execute()
+                t_db = t.replace('^', '').split('.')[0].strip()
                 
-                # Inserisce solo se non esiste già un segnale "Pendente" per questo ticker
-                if not check.data:
-                    tp = lvl + (range_h * 0.7) if is_acc else lvl - (range_h * 0.7)
-                    sl = lvl - (df['ATR'].iloc[-1]*2) if is_acc else lvl + (df['ATR'].iloc[-1]*2)
-                    
+                # --- LOGICA DI INSERIMENTO ROBUSTA ---
+                try:
+                    # Inseriamo direttamente. Se viola l'unicità, Supabase restituirà errore e andremo nel blocco 'except'
                     if supabase:
-                        supabase.table("segnali_trading").insert({
-                            "ticker": t_db, "fase": wyckoff_db, "stato": "Pendente", 
-                            "prezzo_ingresso": round(lvl, 5), "tp": round(tp, 5), "sl": round(sl, 5), "rsi": round(rsi_val, 2)
+                        res = supabase.table("segnali_trading").insert({
+                            "ticker": t_db, 
+                            "fase": wyckoff_db, 
+                            "stato": "Pendente", 
+                            "prezzo_ingresso": round(lvl, 5), 
+                            "tp": round(tp := (lvl + (range_h * 0.7) if is_acc else lvl - (range_h * 0.7)), 5), 
+                            "sl": round(sl := (lvl - (df['ATR'].iloc[-1]*2) if is_acc else lvl + (df['ATR'].iloc[-1]*2)), 5), 
+                            "rsi": round(rsi_val, 2)
                         }).execute()
                     
+                    # Se l'inserimento riesce, mandiamo Telegram
                     asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
                     chart = crea_grafico(df, t, lvl)
                     msg = (f"🎯 <b>FASE WYCKOFF RILEVATA</b>\n"
@@ -165,10 +167,16 @@ def main():
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
                                  params={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'}, 
                                  files={'photo': chart})
-                else:
-                    print(f"ℹ️ Segnale per {t_db} già presente nel database. Salto inserimento.")
 
-        except Exception as e: print(f"❌ Errore {t}: {e}")
+                except Exception as db_e:
+                    # Se l'errore è un duplicato (23505), lo ignoriamo silenziosamente
+                    if '23505' in str(db_e):
+                        print(f"ℹ️ {t_db} già presente (Duplicate Key). Salto.")
+                    else:
+                        print(f"⚠️ Errore DB su {t_db}: {db_e}")
+
+        except Exception as e: 
+            print(f"❌ Errore generale {t}: {e}")
 
 if __name__ == "__main__":
     main()
