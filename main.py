@@ -17,7 +17,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL else None
 
 ALPHA = 0.00729735
 MOLTIPLICATORE_QUANTUM = 1.618  
-SOGLIA_NOTIFICA = 0.05          
+SOGLIA_NOTIFICA = 0.05          # 5% per attivare alert
+SOGLIA_CHIUSURA = 0.08          # 8% per invalidare ordine se il prezzo scappa
 
 # --- MAPPA ASSET COMPLETA ---
 MAPPA_ASSET = {
@@ -96,6 +97,9 @@ def main():
             symbols = [line.strip() for line in f if line.strip() and not line.startswith('#')]
     except: return
 
+    report_pendenti = []
+    nuovi_alert_count = 0
+
     for t in symbols:
         if is_weekend and "-USD" not in t: continue
         try:
@@ -104,79 +108,91 @@ def main():
             df.columns = [str(c[0] if isinstance(c, tuple) else c).capitalize() for c in df.columns]
             df = calcola_indicatori(df)
             
-            p = float(df['Close'].iloc[-1].item())
+            p_attuale = float(df['Close'].iloc[-1].item())
             h_r, l_r = float(df['High'].rolling(137).max().iloc[-1]), float(df['Low'].rolling(137).min().iloc[-1])
             range_h = h_r - l_r
             rsi_val = df['RSI'].iloc[-1]
             vol_attuale = df['Volume'].iloc[-1]
             vol_ma = df['MA20_Vol'].iloc[-1]
             
-            is_acc = p < (h_r + l_r) / 2
-            lvl = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
-            dist = abs(p - lvl) / lvl
-            
-            fase_attiva = False
-            wyckoff_db = "" 
-            wyckoff_msg = "" 
+            is_acc = p_attuale < (h_r + l_r) / 2
+            lvl_entry = l_r - (range_h * ALPHA * MOLTIPLICATORE_QUANTUM) if is_acc else h_r + (range_h * ALPHA * MOLTIPLICATORE_QUANTUM)
+            distanza = abs(p_attuale - lvl_entry) / lvl_entry
+            t_db = t.replace('^', '').split('.')[0].strip()
 
-            vol_confermato = vol_attuale > (vol_ma * 1.5)
+            # --- 1. GESTIONE POSIZIONI ESISTENTI (CHIUSURA) ---
+            check = supabase.table("segnali_trading").select("*").eq("ticker", t_db).eq("stato", "Pendente").execute()
             
-            if is_acc and dist < SOGLIA_NOTIFICA:
-                if vol_confermato and (35 <= rsi_val <= 55):
-                    fase_attiva = True
-                    wyckoff_db = "ACCUMULAZIONE (SOS)" 
-                    wyckoff_msg = "ACCUMULAZIONE (Fase D/E - SOS Attiva) ✅"
-            
-            elif not is_acc and dist < SOGLIA_NOTIFICA:
-                if vol_confermato and (45 <= rsi_val <= 65):
-                    fase_attiva = True
-                    wyckoff_db = "DISTRIBUZIONE (SOW)" 
-                    wyckoff_msg = "DISTRIBUZIONE (Fase C/D - SOW Attiva) ✅"
-
-            if fase_attiva:
-                t_db = t.replace('^', '').split('.')[0].strip()
+            if check.data:
+                p = check.data[0]
+                chiudi, motivo = False, ""
                 
-                # --- LOGICA DI INSERIMENTO ROBUSTA ---
-                try:
-                    # Inseriamo direttamente. Se viola l'unicità, Supabase restituirà errore e andremo nel blocco 'except'
-                    if supabase:
-                        res = supabase.table("segnali_trading").insert({
-                            "ticker": t_db, 
-                            "fase": wyckoff_db, 
-                            "stato": "Pendente", 
-                            "prezzo_ingresso": round(lvl, 5), 
-                            "tp": round(tp := (lvl + (range_h * 0.7) if is_acc else lvl - (range_h * 0.7)), 5), 
-                            "sl": round(sl := (lvl - (df['ATR'].iloc[-1]*2) if is_acc else lvl + (df['ATR'].iloc[-1]*2)), 5), 
-                            "rsi": round(rsi_val, 2)
-                        }).execute()
+                if is_acc: # Logica Long
+                    if p_attuale >= p['tp']: chiudi, motivo = True, "🎯 TARGET RAGGIUNTO"
+                    elif p_attuale <= p['sl']: chiudi, motivo = True, "🛑 STOP LOSS PRESO"
+                    elif distanza > SOGLIA_CHIUSURA: chiudi, motivo = True, "📐 INVALIDATO (LONTANO)"
+                else: # Logica Short
+                    if p_attuale <= p['tp']: chiudi, motivo = True, "🎯 TARGET RAGGIUNTO"
+                    elif p_attuale >= p['sl']: chiudi, motivo = True, "🛑 STOP LOSS PRESO"
+                    elif distanza > SOGLIA_CHIUSURA: chiudi, motivo = True, "📐 INVALIDATO (LONTANO)"
+                
+                if chiudi:
+                    supabase.table("segnali_trading").update({"stato": "Chiuso"}).eq("ticker", t_db).execute()
+                    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                                 params={'chat_id': CHAT_ID, 'text': f"🚩 <b>POSIZIONE CHIUSA</b>\n<b>{t_db}</b>: {motivo}", 'parse_mode': 'HTML'})
+                else:
+                    report_pendenti.append(f"⏳ {t_db}: In attesa @ {p['prezzo_ingresso']}")
+
+            # --- 2. RICERCA NUOVI ALERT (Solo se non pendente) ---
+            else:
+                vol_confermato = vol_attuale > (vol_ma * 1.5)
+                fase_attiva = False
+                wyckoff_db = ""
+                
+                if is_acc and distanza < SOGLIA_NOTIFICA and vol_confermato and (35 <= rsi_val <= 55):
+                    fase_attiva, wyckoff_db = True, "ACCUMULAZIONE (SOS)"
+                elif not is_acc and distanza < SOGLIA_NOTIFICA and vol_confermato and (45 <= rsi_val <= 65):
+                    fase_attiva, wyckoff_db = True, "DISTRIBUZIONE (SOW)"
+
+                if fase_attiva:
+                    tp = lvl_entry + (range_h * 0.7) if is_acc else lvl_entry - (range_h * 0.7)
+                    sl = lvl_entry - (df['ATR'].iloc[-1]*2) if is_acc else lvl_entry + (df['ATR'].iloc[-1]*2)
                     
-                    # Se l'inserimento riesce, mandiamo Telegram
+                    supabase.table("segnali_trading").insert({
+                        "ticker": t_db, "fase": wyckoff_db, "fase": wyckoff_db, "stato": "Pendente", 
+                        "prezzo_ingresso": round(lvl_entry, 5), "tp": round(tp, 5), "sl": round(sl, 5), "rsi": round(rsi_val, 2)
+                    }).execute()
+                    
                     asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
-                    chart = crea_grafico(df, t, lvl)
-                    msg = (f"🎯 <b>FASE WYCKOFF RILEVATA</b>\n"
+                    chart = crea_grafico(df, t, lvl_entry)
+                    msg = (f"🚀 <b>NUOVO ALERT</b>\n"
                            f"━━━━━━━━━━━━━━━\n"
-                           f"📦 <b>Stato:</b> {wyckoff_msg}\n"
+                           f"📦 <b>Stato:</b> {wyckoff_db}\n"
                            f"📈 <b>Asset:</b> {asset['cat']} ({t})\n"
                            f"🔵 <b>Ordine:</b> {'BUY LIMIT' if is_acc else 'SELL LIMIT'}\n"
-                           f"💸 <b>Entry:</b> {lvl:.4f}\n"
+                           f"💸 <b>Entry:</b> {lvl_entry:.4f}\n"
                            f"🟢 <b>Target:</b> {tp:.4f} | 🔴 <b>Stop:</b> {sl:.4f}\n"
                            f"━━━━━━━━━━━━━━━\n"
-                           f"📊 <b>RSI:</b> {rsi_val:.1f} | 🔊 <b>Vol:</b> {vol_attuale/vol_ma:.1f}x\n"
                            f"🔗 <a href='https://it.tradingview.com/chart/?symbol={asset['tv']}'>TradingView</a>")
                     
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
                                  params={'chat_id': CHAT_ID, 'caption': msg, 'parse_mode': 'HTML'}, 
                                  files={'photo': chart})
+                    nuovi_alert_count += 1
 
-                except Exception as db_e:
-                    # Se l'errore è un duplicato (23505), lo ignoriamo silenziosamente
-                    if '23505' in str(db_e):
-                        print(f"ℹ️ {t_db} già presente (Duplicate Key). Salto.")
-                    else:
-                        print(f"⚠️ Errore DB su {t_db}: {db_e}")
+        except Exception as e: print(f"❌ Errore {t}: {e}")
 
-        except Exception as e: 
-            print(f"❌ Errore generale {t}: {e}")
+    # --- 3. RIEPILOGO CICLO FINALE ---
+    testo_report = "📊 <b>RIEPILOGO SCANSIONE</b>\n━━━━━━━━━━━━━━━\n"
+    testo_report += f"🆕 Nuovi Alert: {nuovi_alert_count}\n"
+    
+    if report_pendenti:
+        testo_report += "\n<b>ORDINI ATTIVI:</b>\n" + "\n".join(report_pendenti)
+    else:
+        testo_report += "\n📭 Nessun ordine pendente."
+        
+    requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", 
+                 params={'chat_id': CHAT_ID, 'text': testo_report, 'parse_mode': 'HTML', 'disable_web_page_preview': True})
 
 if __name__ == "__main__":
     main()
