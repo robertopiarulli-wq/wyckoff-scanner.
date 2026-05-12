@@ -116,47 +116,50 @@ def main():
             dist = abs(p - lvl) / lvl
             
             fase_attiva = False
-            wyckoff_label = ""
+            wyckoff_db = "" # Etichetta per il Database (max 20 char)
+            wyckoff_msg = "" # Etichetta estesa per Telegram
 
-            # --- FILTRI WYCKOFF (Tabella Parametri) ---
-            # 1. Volume SOS/SOW (>1.5x MA20)
+            # --- FILTRI WYCKOFF (SOS/SOW) ---
             vol_confermato = vol_attuale > (vol_ma * 1.5)
             
-            # 2. Logica Selettiva Accumulazione (Fase D/E)
             if is_acc and dist < SOGLIA_NOTIFICA:
                 if vol_confermato and (35 <= rsi_val <= 55):
                     fase_attiva = True
-                    wyckoff_label = "ACCUMULAZIONE (Fase D/E - SOS Attiva)"
+                    wyckoff_db = "ACCUMULAZIONE (SOS)" # Lunghezza: 19 caratteri
+                    wyckoff_msg = "ACCUMULAZIONE (Fase D/E - SOS Attiva) ✅"
             
-            # 3. Logica Selettiva Distribuzione (Fase C/D)
             elif not is_acc and dist < SOGLIA_NOTIFICA:
                 if vol_confermato and (45 <= rsi_val <= 65):
                     fase_attiva = True
-                    wyckoff_label = "DISTRIBUZIONE (Fase C/D - SOW Attiva)"
+                    wyckoff_db = "DISTRIBUZIONE (SOW)" # Lunghezza: 19 caratteri
+                    wyckoff_msg = "DISTRIBUZIONE (Fase C/D - SOW Attiva) ✅"
 
             if fase_attiva:
-                check = supabase.table("segnali_trading").select("*").eq("ticker", t).eq("stato", "Pendente").execute()
+                # Pulizia ticker per uniformità database (es. FTSEMIB.MI -> FTSEMIB)
+                t_db = t.replace('^', '').split('.')[0]
+                check = supabase.table("segnali_trading").select("*").eq("ticker", t_db).eq("stato", "Pendente").execute()
+                
                 if not check.data:
                     tp = lvl + (range_h * 0.7) if is_acc else lvl - (range_h * 0.7)
                     sl = lvl - (df['ATR'].iloc[-1]*2) if is_acc else lvl + (df['ATR'].iloc[-1]*2)
                     
                     if supabase:
                         supabase.table("segnali_trading").insert({
-                            "ticker": t, "fase": wyckoff_label, "stato": "Pendente", 
+                            "ticker": t_db, "fase": wyckoff_db, "stato": "Pendente", 
                             "prezzo_ingresso": round(lvl, 5), "tp": round(tp, 5), "sl": round(sl, 5), "rsi": round(rsi_val, 2)
                         }).execute()
                     
                     asset = MAPPA_ASSET.get(t, {"cat": "📊 ASSET", "tv": t})
                     chart = crea_grafico(df, t, lvl)
-                    msg = (f"🎯 <b>FASE WYCKOFF ATTIVA</b>\n"
+                    msg = (f"🎯 <b>FASE WYCKOFF RILEVATA</b>\n"
                            f"━━━━━━━━━━━━━━━\n"
-                           f"📦 <b>Stato:</b> {wyckoff_label}\n"
+                           f"📦 <b>Stato:</b> {wyckoff_msg}\n"
                            f"📈 <b>Asset:</b> {asset['cat']} ({t})\n"
-                           f"🔵 <b>Buy/Sell Limit:</b> {lvl:.4f}\n"
+                           f"🔵 <b>Ordine:</b> {'BUY LIMIT' if is_acc else 'SELL LIMIT'}\n"
+                           f"💸 <b>Entry:</b> {lvl:.4f}\n"
                            f"🟢 <b>Target:</b> {tp:.4f} | 🔴 <b>Stop:</b> {sl:.4f}\n"
                            f"━━━━━━━━━━━━━━━\n"
-                           f"📊 <b>RSI:</b> {rsi_val:.1f} (Filtro OK)\n"
-                           f"🔊 <b>Volume SOS/SOW:</b> {vol_attuale/vol_ma:.1f}x (Soglia >1.5x)\n"
+                           f"📊 <b>RSI:</b> {rsi_val:.1f} | 🔊 <b>Vol:</b> {vol_attuale/vol_ma:.1f}x\n"
                            f"🔗 <a href='https://it.tradingview.com/chart/?symbol={asset['tv']}'>TradingView</a>")
                     
                     requests.post(f"https://api.telegram.org/bot{TOKEN}/sendPhoto", 
